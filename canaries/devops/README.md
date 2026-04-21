@@ -55,16 +55,7 @@ The four canaries are:
   - named-target canary
   - proves a stronger named-target join
 
-Use the sync helper after the prerequisites exist:
+The tracked YAML canaries stay public because they are part of the repo-owned proof shape.
 
-```bash
-python3 scripts/sync_devops_canaries.py \
-  --org "https://dev.azure.com/<org-name>/" \
-  --project "<project-name>" \
-  --repo "<repo-name>" \
-  --service-connection "<service-connection-name>" \
-  --variable-group "<variable-group-name>" \
-  --ops-resource-group "<ops-resource-group>" \
-  --workload-resource-group "<workload-resource-group>" \
-  --named-webapp "<named-webapp>"
-```
+The current sync helper remains a local maintainer bootstrap utility for now, not a public
+operator-facing interface.

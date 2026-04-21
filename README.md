@@ -156,7 +156,7 @@ The repo now has the first validation scaffold:
 
 The current bootstrap manifest is:
 
-- [contracts/bootstrap.validation-manifest.json](/Users/cfarley/Documents/HarrierOps/Azure/HO-Azure-Lab/contracts/bootstrap.validation-manifest.json)
+- [contracts/bootstrap.validation-manifest.json](contracts/bootstrap.validation-manifest.json)
 
 It is intentionally an honest starter manifest, not a claim that the whole lab is already
 release-ready.
@@ -342,26 +342,22 @@ That is still one main lab scenario. It is not meant to become three different p
 
 ## Core Files
 
-- [TESTS.md](/Users/cfarley/Documents/HarrierOps/Azure/HO-Azure-Lab/TESTS.md)
-  Plain-language validation workflow.
-- [RUNS.md](/Users/cfarley/Documents/HarrierOps/Azure/HO-Azure-Lab/RUNS.md)
-  Plain-language run and artifact layout.
-- [cmd/labctl/main.go](/Users/cfarley/Documents/HarrierOps/Azure/HO-Azure-Lab/cmd/labctl/main.go)
+- [cmd/labctl/main.go](cmd/labctl/main.go)
   Primary Go entrypoint for the lab workflow.
-- [internal/lab/](/Users/cfarley/Documents/HarrierOps/Azure/HO-Azure-Lab/internal/lab)
+- [internal/lab/](internal/lab)
   Go implementation of surface derivation, manifest scaffolding, run scaffolding, execution
   running, live payload checks, and completion verification.
-- [contracts/validation-manifest.schema.json](/Users/cfarley/Documents/HarrierOps/Azure/HO-Azure-Lab/contracts/validation-manifest.schema.json)
+- [contracts/validation-manifest.schema.json](contracts/validation-manifest.schema.json)
   Shape of the lab-owned manifest.
-- [contracts/validation-run-result.schema.json](/Users/cfarley/Documents/HarrierOps/Azure/HO-Azure-Lab/contracts/validation-run-result.schema.json)
+- [contracts/validation-run-result.schema.json](contracts/validation-run-result.schema.json)
   Shape of one validation run result.
-- [canaries/devops/README.md](/Users/cfarley/Documents/HarrierOps/Azure/HO-Azure-Lab/canaries/devops/README.md)
+- [canaries/devops/README.md](canaries/devops/README.md)
   Explains the first-party DevOps canary lane.
-- [scripts/sync_devops_canaries.py](/Users/cfarley/Documents/HarrierOps/Azure/HO-Azure-Lab/scripts/sync_devops_canaries.py)
-  Renders and syncs the tracked DevOps canary YAML, or renders it locally for review.
 
-The older Python scripts are still in `scripts/` as bootstrap reference right now, but the primary
-runtime path is now the Go binary.
+Maintainer-only workflow docs and bootstrap helpers still exist locally, but they are intentionally
+not treated as public operator-facing surfaces right now.
+
+The primary public runtime path is the Go binary.
 
 ## Plain-Language Model
 
