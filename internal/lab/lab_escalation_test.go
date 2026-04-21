@@ -27,10 +27,10 @@ func TestValidateEscalationPathPayloadAgainstSourceTruthPassesForDirectAndTrustR
 	permissionsPayload := map[string]any{
 		"permissions": []any{
 			map[string]any{
-				"principal_id":         "user-1",
-				"is_current_identity":  true,
-				"privileged":           true,
-				"scope_ids":            []any{"/subscriptions/sub-123"},
+				"principal_id":        "user-1",
+				"is_current_identity": true,
+				"privileged":          true,
+				"scope_ids":           []any{"/subscriptions/sub-123"},
 			},
 			map[string]any{
 				"principal_id":        "sp-1",
@@ -126,11 +126,11 @@ func TestValidateEscalationPathPayloadAgainstSourceTruthAllowsSuppressedNonNetNe
 				"scope_ids":           []any{"/subscriptions/sub-123"},
 			},
 			map[string]any{
-				"principal_id":      "sp-1",
+				"principal_id":        "sp-1",
 				"is_current_identity": false,
-				"privileged":        true,
-				"high_impact_roles": []any{"Contributor"},
-				"scope_ids":         []any{"/subscriptions/sub-123/resourceGroups/rg-workload"},
+				"privileged":          true,
+				"high_impact_roles":   []any{"Contributor"},
+				"scope_ids":           []any{"/subscriptions/sub-123/resourceGroups/rg-workload"},
 			},
 		},
 	}
