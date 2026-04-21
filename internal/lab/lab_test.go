@@ -7,13 +7,25 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 )
 
-const hoAzureDir = "/Users/cfarley/Documents/HarrierOps/Azure/HO-Azure"
+var hoAzureDir = resolveTestHOAzureDir()
+
+func resolveTestHOAzureDir() string {
+	if configured := strings.TrimSpace(os.Getenv("HO_AZURE_TEST_DIR")); configured != "" {
+		return configured
+	}
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		return filepath.Join("internal", "lab", "testdata", "ho-azure")
+	}
+	return filepath.Join(filepath.Dir(currentFile), "testdata", "ho-azure")
+}
 
 func TestDeriveSurfaceIncludesContractsAndGroups(t *testing.T) {
 	surface, err := DeriveSurface(hoAzureDir)
