@@ -39,6 +39,15 @@ func TestBuildAzureSetupTFVarsUsesOneVariableModel(t *testing.T) {
 	if payload["enable_azure_ml"] != false {
 		t.Fatalf("expected azure-ml lane to default false, got %#v", payload["enable_azure_ml"])
 	}
+	if payload["enable_deployment_path_addin"] != false {
+		t.Fatalf("expected deployment-path add-in to default false, got %#v", payload["enable_deployment_path_addin"])
+	}
+	if payload["enable_compute_control_addin"] != false {
+		t.Fatalf("expected compute-control add-in to default false, got %#v", payload["enable_compute_control_addin"])
+	}
+	if payload["enable_persistence_addin"] != false {
+		t.Fatalf("expected persistence add-in to default false, got %#v", payload["enable_persistence_addin"])
+	}
 }
 
 func TestRunAzureSetupWritesTFVarsAndRunsTofuFlow(t *testing.T) {
@@ -84,6 +93,15 @@ func TestRunAzureSetupWritesTFVarsAndRunsTofuFlow(t *testing.T) {
 	}
 	if tfvars["enable_azure_ml"] != false {
 		t.Fatalf("expected azure-ml lane to stay disabled by default, got %#v", tfvars["enable_azure_ml"])
+	}
+	if tfvars["enable_deployment_path_addin"] != false {
+		t.Fatalf("expected deployment-path add-in to stay disabled by default, got %#v", tfvars["enable_deployment_path_addin"])
+	}
+	if tfvars["enable_compute_control_addin"] != false {
+		t.Fatalf("expected compute-control add-in to stay disabled by default, got %#v", tfvars["enable_compute_control_addin"])
+	}
+	if tfvars["enable_persistence_addin"] != false {
+		t.Fatalf("expected persistence add-in to stay disabled by default, got %#v", tfvars["enable_persistence_addin"])
 	}
 
 	logData, err := os.ReadFile(logPath)
@@ -158,6 +176,69 @@ func TestRunAzureSetupAddsAzureMLAsFollowUpInfrastructure(t *testing.T) {
 	}
 }
 
+func TestRunAzureSetupAddsOptionalAddinsAsFollowUpInfrastructure(t *testing.T) {
+	infraDir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "tofu.log")
+	fakeTofuPath := filepath.Join(t.TempDir(), "fake-tofu")
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		fmt.Sprintf("echo \"$@\" >> %s", shellQuote(logPath)),
+		"exit 0",
+	}, "\n")
+	if err := os.WriteFile(fakeTofuPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tofu: %v", err)
+	}
+
+	var progress bytes.Buffer
+	_, exitCode, err := RunAzureSetup(AzureSetupConfig{
+		InfraDir:                  infraDir,
+		Location:                  "centralus",
+		NamePrefix:                "hoazurelab",
+		SSHPublicKey:              "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCtest",
+		CostProfile:               "default",
+		AKSVMSize:                 "Standard_D2s_v3",
+		EnableDeploymentPathAddin: true,
+		EnableComputeControlAddin: true,
+		EnablePersistenceAddin:    true,
+		TofuBinary:                fakeTofuPath,
+		ProgressWriter:            &progress,
+	})
+	if err != nil {
+		t.Fatalf("run azure setup with add-ins: %v", err)
+	}
+	if exitCode != 0 {
+		t.Fatalf("expected successful setup exit, got %d", exitCode)
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read fake tofu log: %v", err)
+	}
+	logText := string(logData)
+	for _, expected := range []string{
+		"-exclude=azurerm_automation_runbook.deployment_path[0]",
+		"-exclude=azurerm_linux_web_app.compute_control[0]",
+		"-exclude=azurerm_logic_app_workflow.persistence[0]",
+		"-target=azurerm_automation_runbook.deployment_path[0]",
+		"-target=azurerm_linux_web_app.compute_control[0]",
+		"-target=azurerm_logic_app_workflow.persistence[0]",
+	} {
+		if !strings.Contains(logText, expected) {
+			t.Fatalf("expected add-in target %q in fake tofu log, got %q", expected, logText)
+		}
+	}
+	progressText := progress.String()
+	for _, expected := range []string{
+		"Running follow-up OpenTofu apply for Deployment Path Add-in...",
+		"Running follow-up OpenTofu apply for Compute Control Add-in...",
+		"Running follow-up OpenTofu apply for Persistence Add-in...",
+	} {
+		if !strings.Contains(progressText, expected) {
+			t.Fatalf("expected add-in progress %q, got %q", expected, progressText)
+		}
+	}
+}
+
 func TestRunAzureSetupGeneratesLabKeyWhenNoKeyIsProvided(t *testing.T) {
 	infraDir := t.TempDir()
 	var progress bytes.Buffer
@@ -188,6 +269,15 @@ func TestRunAzureSetupGeneratesLabKeyWhenNoKeyIsProvided(t *testing.T) {
 	}
 	if tfvars["enable_azure_ml"] != false {
 		t.Fatalf("expected generated tfvars to keep azure-ml lane disabled by default, got %#v", tfvars["enable_azure_ml"])
+	}
+	if tfvars["enable_deployment_path_addin"] != false {
+		t.Fatalf("expected generated tfvars to keep deployment-path add-in disabled by default, got %#v", tfvars["enable_deployment_path_addin"])
+	}
+	if tfvars["enable_compute_control_addin"] != false {
+		t.Fatalf("expected generated tfvars to keep compute-control add-in disabled by default, got %#v", tfvars["enable_compute_control_addin"])
+	}
+	if tfvars["enable_persistence_addin"] != false {
+		t.Fatalf("expected generated tfvars to keep persistence add-in disabled by default, got %#v", tfvars["enable_persistence_addin"])
 	}
 
 	privateKeyPath := filepath.Join(filepath.Dir(infraDir), ".generated", "keys", "azure-lab-default")

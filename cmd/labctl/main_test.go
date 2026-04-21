@@ -49,6 +49,15 @@ func TestSetupAzureEnvironmentDefaultsWriteExpectedTFVars(t *testing.T) {
 	if tfvars["enable_azure_ml"] != false {
 		t.Fatalf("expected azure-ml lane default false, got %#v", tfvars["enable_azure_ml"])
 	}
+	if tfvars["enable_deployment_path_addin"] != false {
+		t.Fatalf("expected deployment-path add-in default false, got %#v", tfvars["enable_deployment_path_addin"])
+	}
+	if tfvars["enable_compute_control_addin"] != false {
+		t.Fatalf("expected compute-control add-in default false, got %#v", tfvars["enable_compute_control_addin"])
+	}
+	if tfvars["enable_persistence_addin"] != false {
+		t.Fatalf("expected persistence add-in default false, got %#v", tfvars["enable_persistence_addin"])
+	}
 	if sshKey, ok := tfvars["ssh_public_key"].(string); !ok || !strings.HasPrefix(sshKey, "ssh-rsa ") {
 		t.Fatalf("expected generated lab ssh key, got %#v", tfvars["ssh_public_key"])
 	}
@@ -73,6 +82,9 @@ func TestSetupEnvironmentPassesFlagsThroughToAzureSetup(t *testing.T) {
 		"--location", "eastus2",
 		"--cost-profile", "lower-cost",
 		"--enable-azure-ml",
+		"--enable-deployment-path-addin",
+		"--enable-compute-control-addin",
+		"--enable-persistence-addin",
 	}
 
 	if exitCode := run(); exitCode != 0 {
@@ -97,5 +109,14 @@ func TestSetupEnvironmentPassesFlagsThroughToAzureSetup(t *testing.T) {
 	}
 	if tfvars["enable_azure_ml"] != true {
 		t.Fatalf("expected azure-ml lane to forward through the thin setup flow, got %#v", tfvars["enable_azure_ml"])
+	}
+	if tfvars["enable_deployment_path_addin"] != true {
+		t.Fatalf("expected deployment-path add-in to forward through the thin setup flow, got %#v", tfvars["enable_deployment_path_addin"])
+	}
+	if tfvars["enable_compute_control_addin"] != true {
+		t.Fatalf("expected compute-control add-in to forward through the thin setup flow, got %#v", tfvars["enable_compute_control_addin"])
+	}
+	if tfvars["enable_persistence_addin"] != true {
+		t.Fatalf("expected persistence add-in to forward through the thin setup flow, got %#v", tfvars["enable_persistence_addin"])
 	}
 }

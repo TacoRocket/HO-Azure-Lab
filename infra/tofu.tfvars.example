@@ -16,6 +16,11 @@ aks_vm_size = "Standard_D2s_v3"
 # Optional Azure ML lane:
 # enable_azure_ml = true
 
+# Optional richer proof add-ins:
+# enable_deployment_path_addin = true
+# enable_compute_control_addin = true
+# enable_persistence_addin = true
+
 # Optional targeted overrides:
 # vm_size_override  = "Standard_D2s_v3"
 # vmss_sku_override = "Standard_D2s_v3"

@@ -2593,6 +2593,127 @@ func setupViewpointSession(viewpoint string, credentials map[string]string, fall
 	return configDir, env, tenantID, subscriptionID, nil
 }
 
+func setupAdminAmbientSession(fallbackTenant, fallbackSubscription, workingDir string, progressWriter io.Writer) (string, []string, string, string, error) {
+	sourceConfigDir, err := ambientAzureConfigDir()
+	if err != nil {
+		return "", nil, "", "", err
+	}
+
+	configDir, err := os.MkdirTemp(azureViewpointConfigRoot(), "ho-azure-admin-")
+	if err != nil {
+		return "", nil, "", "", err
+	}
+	if err := copyDirContents(sourceConfigDir, configDir); err != nil {
+		return "", nil, "", "", fmt.Errorf("copy admin Azure CLI config: %w", err)
+	}
+
+	env := append(os.Environ(), "AZURE_CONFIG_DIR="+configDir)
+	accountShow := exec.Command("az", "account", "show", "--output", "json")
+	accountShowOutput, err := runProgressCommand("az account show (admin viewpoint)", workingDir, env, progressWriter, accountShow)
+	if err != nil {
+		return "", nil, "", "", fmt.Errorf("az account show failed: %s", strings.TrimSpace(string(accountShowOutput)))
+	}
+
+	account := azAccountShow{}
+	if err := json.Unmarshal(accountShowOutput, &account); err != nil {
+		return "", nil, "", "", fmt.Errorf("parse az account show output: %w", err)
+	}
+
+	tenantID := strings.TrimSpace(fallbackTenant)
+	if tenantID == "" {
+		tenantID = strings.TrimSpace(account.TenantID)
+	}
+	subscriptionID := strings.TrimSpace(fallbackSubscription)
+	if subscriptionID == "" {
+		subscriptionID = strings.TrimSpace(account.ID)
+	}
+	if subscriptionID == "" {
+		return "", nil, "", "", fmt.Errorf("admin viewpoint is missing a usable subscription_id")
+	}
+
+	accountSet := exec.Command("az", "account", "set", "--subscription", subscriptionID)
+	if output, err := runProgressCommand("az account set (admin viewpoint)", workingDir, env, progressWriter, accountSet); err != nil {
+		return "", nil, "", "", fmt.Errorf("az account set failed: %s", strings.TrimSpace(string(output)))
+	}
+
+	return configDir, env, tenantID, subscriptionID, nil
+}
+
+func ambientAzureConfigDir() (string, error) {
+	configDir := strings.TrimSpace(os.Getenv("AZURE_CONFIG_DIR"))
+	if configDir == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve admin Azure CLI config dir: %w", err)
+		}
+		configDir = filepath.Join(homeDir, ".azure")
+	}
+
+	info, err := os.Stat(configDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("admin viewpoint needs an active Azure CLI config at %q", configDir)
+		}
+		return "", fmt.Errorf("inspect admin Azure CLI config dir %q: %w", configDir, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("admin viewpoint Azure CLI config path %q is not a directory", configDir)
+	}
+
+	return configDir, nil
+}
+
+func copyDirContents(sourceDir, targetDir string) error {
+	entries, err := os.ReadDir(sourceDir)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		sourcePath := filepath.Join(sourceDir, entry.Name())
+		targetPath := filepath.Join(targetDir, entry.Name())
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+
+		if entry.IsDir() {
+			if err := os.MkdirAll(targetPath, info.Mode()); err != nil {
+				return err
+			}
+			if err := copyDirContents(sourcePath, targetPath); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if err := copyFile(sourcePath, targetPath, info.Mode()); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func copyFile(sourcePath, targetPath string, mode os.FileMode) error {
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+
+	target, err := os.OpenFile(targetPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	if err != nil {
+		return err
+	}
+	defer target.Close()
+
+	if _, err := io.Copy(target, source); err != nil {
+		return err
+	}
+	return nil
+}
+
 type AzureRunConfig struct {
 	ManifestPath             string
 	OutputDir                string
@@ -3031,7 +3152,27 @@ func RunAzureValidation(config AzureRunConfig) (int, error) {
 			}()
 
 			viewpoint := task.Viewpoint
-			if viewpoint != "admin" {
+			if viewpoint == "admin" {
+				var err error
+				tempConfigDir, env, taskTenant, taskSubscription, err = setupAdminAmbientSession(tenant, subscription, commandCWD, config.ProgressWriter)
+				if err != nil {
+					entry := CommandLogEntry{
+						SurfaceKind:     task.SurfaceKind,
+						SurfaceName:     task.SurfaceName,
+						Viewpoint:       viewpoint,
+						Command:         task.GroupCommand,
+						Status:          "fail",
+						ExitCode:        -1,
+						StartedAt:       UTCTimestamp(),
+						FinishedAt:      UTCTimestamp(),
+						DurationSeconds: 0,
+						Error:           err.Error(),
+					}
+					entries = append(entries, entry)
+					runResult.SurfaceResultsSection(task.SurfaceKind)[task.SurfaceName][viewpoint] = ViewpointResult{Status: "fail", Notes: err.Error()}
+					return
+				}
+			} else {
 				credentialKey := viewpointCredentialKeys[viewpoint]
 				viewpointCredentials, ok := credentials[credentialKey]
 				if !ok {
@@ -3118,6 +3259,69 @@ func RunAzureValidation(config AzureRunConfig) (int, error) {
 						entry.Error = err.Error()
 					}
 				}
+				if status == "pass" && task.SurfaceKind == "commands" && task.SurfaceName == "env-vars" {
+					if err := captureLiveEnvVarsContext(taskOutdir, commandCWD, env, config.ProgressWriter); err != nil {
+						status = "fail"
+						notes = fmt.Sprintf("Live run captured a payload, but the env-vars validation context could not be recorded: %s", err)
+						entry.Status = "fail"
+						entry.ExitCode = -1
+						entry.Error = err.Error()
+					}
+				}
+				if status == "pass" && task.SurfaceKind == "commands" && task.SurfaceName == "auth-policies" {
+					if err := captureLiveAuthPoliciesContext(taskOutdir, env, config.ProgressWriter); err != nil {
+						status = "fail"
+						notes = fmt.Sprintf("Live run captured a payload, but the auth-policies validation context could not be recorded: %s", err)
+						entry.Status = "fail"
+						entry.ExitCode = -1
+						entry.Error = err.Error()
+					}
+				}
+				if status == "pass" && task.SurfaceKind == "commands" && task.SurfaceName == "cross-tenant" {
+					if err := captureLiveCrossTenantContext(taskOutdir, env, config.ProgressWriter); err != nil {
+						status = "fail"
+						notes = fmt.Sprintf("Live run captured a payload, but the cross-tenant validation context could not be recorded: %s", err)
+						entry.Status = "fail"
+						entry.ExitCode = -1
+						entry.Error = err.Error()
+					}
+				}
+				if status == "pass" && task.SurfaceKind == "commands" && task.SurfaceName == "role-trusts" {
+					if err := captureLiveRoleTrustsContext(taskOutdir, config.InfraDir, env, config.ProgressWriter); err != nil {
+						status = "fail"
+						notes = fmt.Sprintf("Live run captured a payload, but the role-trusts validation context could not be recorded: %s", err)
+						entry.Status = "fail"
+						entry.ExitCode = -1
+						entry.Error = err.Error()
+					}
+				}
+				if status == "pass" && task.SurfaceKind == "commands" && task.SurfaceName == "tokens-credentials" {
+					if err := captureLiveTokensCredentialsContext(taskOutdir, commandCWD, env, config.ProgressWriter); err != nil {
+						status = "fail"
+						notes = fmt.Sprintf("Live run captured a payload, but the tokens-credentials validation context could not be recorded: %s", err)
+						entry.Status = "fail"
+						entry.ExitCode = -1
+						entry.Error = err.Error()
+					}
+				}
+				if status == "pass" && task.SurfaceKind == "commands" && task.SurfaceName == "app-credentials" {
+					if err := captureLiveAppCredentialsContext(taskOutdir, config.InfraDir, env, config.ProgressWriter); err != nil {
+						status = "fail"
+						notes = fmt.Sprintf("Live run captured a payload, but the app-credentials validation context could not be recorded: %s", err)
+						entry.Status = "fail"
+						entry.ExitCode = -1
+						entry.Error = err.Error()
+					}
+				}
+				if status == "pass" && task.SurfaceKind == "commands" && task.SurfaceName == "arm-deployments" {
+					if err := captureLiveArmDeploymentsContext(taskOutdir, commandCWD, env, config.ProgressWriter); err != nil {
+						status = "fail"
+						notes = fmt.Sprintf("Live run captured a payload, but the arm-deployments validation context could not be recorded: %s", err)
+						entry.Status = "fail"
+						entry.ExitCode = -1
+						entry.Error = err.Error()
+					}
+				}
 				if status == "pass" && task.SurfaceKind == "commands" && task.SurfaceName == "dns" {
 					if err := captureLiveDNSContext(taskOutdir, commandCWD, env, config.ProgressWriter); err != nil {
 						status = "fail"
@@ -3167,6 +3371,15 @@ func RunAzureValidation(config AzureRunConfig) (int, error) {
 					if err := captureLiveContainerInstancesContext(taskOutdir, commandCWD, env, config.ProgressWriter); err != nil {
 						status = "fail"
 						notes = fmt.Sprintf("Live run captured a payload, but the container-instances validation context could not be recorded: %s", err)
+						entry.Status = "fail"
+						entry.ExitCode = -1
+						entry.Error = err.Error()
+					}
+				}
+				if status == "pass" && task.SurfaceKind == "commands" && task.SurfaceName == "inventory" {
+					if err := captureLiveInventoryContext(taskOutdir, commandCWD, env, config.ProgressWriter); err != nil {
+						status = "fail"
+						notes = fmt.Sprintf("Live run captured a payload, but the inventory validation context could not be recorded: %s", err)
 						entry.Status = "fail"
 						entry.ExitCode = -1
 						entry.Error = err.Error()
@@ -3235,6 +3448,33 @@ func RunAzureValidation(config AzureRunConfig) (int, error) {
 						entry.Error = err.Error()
 					}
 				}
+				if status == "pass" && task.SurfaceKind == "commands" && task.SurfaceName == "keyvault" {
+					if err := captureLiveKeyVaultContext(taskOutdir, commandCWD, env, config.ProgressWriter); err != nil {
+						status = "fail"
+						notes = fmt.Sprintf("Live run captured a payload, but the keyvault validation context could not be recorded: %s", err)
+						entry.Status = "fail"
+						entry.ExitCode = -1
+						entry.Error = err.Error()
+					}
+				}
+				if status == "pass" && task.SurfaceKind == "commands" && task.SurfaceName == "resource-trusts" {
+					if err := captureLiveKeyVaultContext(taskOutdir, commandCWD, env, config.ProgressWriter); err != nil {
+						status = "fail"
+						notes = fmt.Sprintf("Live run captured a payload, but the resource-trusts keyvault validation context could not be recorded: %s", err)
+						entry.Status = "fail"
+						entry.ExitCode = -1
+						entry.Error = err.Error()
+					}
+					if status == "pass" {
+						if err := captureLiveStorageContext(taskOutdir, commandCWD, env, config.ProgressWriter); err != nil {
+							status = "fail"
+							notes = fmt.Sprintf("Live run captured a payload, but the resource-trusts storage validation context could not be recorded: %s", err)
+							entry.Status = "fail"
+							entry.ExitCode = -1
+							entry.Error = err.Error()
+						}
+					}
+				}
 				if status == "pass" && task.SurfaceKind == "commands" && task.SurfaceName == "storage" {
 					if err := captureLiveStorageContext(taskOutdir, commandCWD, env, config.ProgressWriter); err != nil {
 						status = "fail"
@@ -3293,6 +3533,24 @@ func RunAzureValidation(config AzureRunConfig) (int, error) {
 					if err := captureLiveAKSContext(taskOutdir, commandCWD, env, config.ProgressWriter); err != nil {
 						status = "fail"
 						notes = fmt.Sprintf("Live run captured a payload, but the aks validation context could not be recorded: %s", err)
+						entry.Status = "fail"
+						entry.ExitCode = -1
+						entry.Error = err.Error()
+					}
+				}
+				if status == "pass" && task.SurfaceKind == "families" && task.SurfaceName == "credential-path" {
+					if err := captureLiveCredentialPathContext(taskOutdir, commandCWD, env, config.ProgressWriter); err != nil {
+						status = "fail"
+						notes = fmt.Sprintf("Live run captured a payload, but the credential-path validation context could not be recorded: %s", err)
+						entry.Status = "fail"
+						entry.ExitCode = -1
+						entry.Error = err.Error()
+					}
+				}
+				if status == "pass" && task.SurfaceKind == "families" && task.SurfaceName == "compute-control" {
+					if err := captureLiveComputeControlContext(taskOutdir, config.InfraDir, commandCWD, env, config.ProgressWriter); err != nil {
+						status = "fail"
+						notes = fmt.Sprintf("Live run captured a payload, but the compute-control validation context could not be recorded: %s", err)
 						entry.Status = "fail"
 						entry.ExitCode = -1
 						entry.Error = err.Error()

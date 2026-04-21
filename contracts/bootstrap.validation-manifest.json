@@ -64,24 +64,16 @@
         }
       },
       "app-credentials": {
-        "status": "excepted",
-        "reason_code": "first_gate_followup",
-        "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab.",
+        "status": "covered",
         "viewpoints": {
           "admin": {
-            "status": "excepted",
-            "reason_code": "first_gate_followup",
-            "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+            "status": "covered"
           },
           "dev": {
-            "status": "excepted",
-            "reason_code": "first_gate_followup",
-            "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+            "status": "covered"
           },
           "lower-privilege": {
-            "status": "excepted",
-            "reason_code": "first_gate_followup",
-            "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+            "status": "covered"
           }
         }
       },
@@ -156,24 +148,16 @@
         }
       },
       "azure-ml": {
-        "status": "excepted",
-        "reason_code": "first_gate_followup",
-        "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab.",
+        "status": "covered",
         "viewpoints": {
           "admin": {
-            "status": "excepted",
-            "reason_code": "first_gate_followup",
-            "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+            "status": "covered"
           },
           "dev": {
-            "status": "excepted",
-            "reason_code": "first_gate_followup",
-            "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+            "status": "covered"
           },
           "lower-privilege": {
-            "status": "excepted",
-            "reason_code": "first_gate_followup",
-            "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+            "status": "covered"
           }
         }
       },
@@ -206,29 +190,16 @@
         }
       },
       "cross-tenant": {
-        "status": "excepted",
-        "reason_code": "manual_setup_not_done",
-        "reason_detail": "Cross-tenant validation needs a repeatable second-tenant setup path before this lab can gate it honestly.",
-        "manual_setup_steps": [
-          "Create or identify the second tenant and the identities used for the trust path.",
-          "Record the repeatable cross-tenant prerequisite steps in ho-azure-lab-reference before gating this command.",
-          "Wire the resulting proof inputs into the lab manifest and run artifacts."
-        ],
+        "status": "covered",
         "viewpoints": {
           "admin": {
-            "status": "excepted",
-            "reason_code": "manual_setup_not_done",
-            "reason_detail": "Cross-tenant validation needs a repeatable second-tenant setup path before this lab can gate it honestly."
+            "status": "covered"
           },
           "dev": {
-            "status": "excepted",
-            "reason_code": "manual_setup_not_done",
-            "reason_detail": "Cross-tenant validation needs a repeatable second-tenant setup path before this lab can gate it honestly."
+            "status": "covered"
           },
           "lower-privilege": {
-            "status": "excepted",
-            "reason_code": "manual_setup_not_done",
-            "reason_detail": "Cross-tenant validation needs a repeatable second-tenant setup path before this lab can gate it honestly."
+            "status": "covered"
           }
         }
       },
@@ -316,24 +287,16 @@
         }
       },
       "event-grid": {
-        "status": "excepted",
-        "reason_code": "first_gate_followup",
-        "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab.",
+        "status": "covered",
         "viewpoints": {
           "admin": {
-            "status": "excepted",
-            "reason_code": "first_gate_followup",
-            "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+            "status": "covered"
           },
           "dev": {
-            "status": "excepted",
-            "reason_code": "first_gate_followup",
-            "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+            "status": "covered"
           },
           "lower-privilege": {
-            "status": "excepted",
-            "reason_code": "first_gate_followup",
-            "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+            "status": "covered"
           }
         }
       },
@@ -381,33 +344,6 @@
       },
       "lighthouse": {
         "status": "excepted",
-        "reason_code": "manual_setup_not_done",
-        "reason_detail": "Lighthouse validation still needs a repeatable delegated-resource setup path before this repo can gate it honestly.",
-        "manual_setup_steps": [
-          "Create or identify the managing and managed scopes used for the Lighthouse relationship.",
-          "Record the delegated setup path in ho-azure-lab-reference before gating this command.",
-          "Wire the resulting proof inputs into the lab manifest and run artifacts."
-        ],
-        "viewpoints": {
-          "admin": {
-            "status": "excepted",
-            "reason_code": "manual_setup_not_done",
-            "reason_detail": "Lighthouse validation still needs a repeatable delegated-resource setup path before this repo can gate it honestly."
-          },
-          "dev": {
-            "status": "excepted",
-            "reason_code": "manual_setup_not_done",
-            "reason_detail": "Lighthouse validation still needs a repeatable delegated-resource setup path before this repo can gate it honestly."
-          },
-          "lower-privilege": {
-            "status": "excepted",
-            "reason_code": "manual_setup_not_done",
-            "reason_detail": "Lighthouse validation still needs a repeatable delegated-resource setup path before this repo can gate it honestly."
-          }
-        }
-      },
-      "logic-apps": {
-        "status": "excepted",
         "reason_code": "first_gate_followup",
         "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab.",
         "viewpoints": {
@@ -425,6 +361,20 @@
             "status": "excepted",
             "reason_code": "first_gate_followup",
             "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+          }
+        }
+      },
+      "logic-apps": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
           }
         }
       },
@@ -668,25 +618,31 @@
       }
     },
     "families": {
-      "compute-control": {
-        "status": "excepted",
-        "reason_code": "first_gate_followup",
-        "reason_detail": "This grouped family is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab.",
+      "automation": {
+        "status": "covered",
         "viewpoints": {
           "admin": {
-            "status": "excepted",
-            "reason_code": "first_gate_followup",
-            "reason_detail": "This grouped family is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+            "status": "covered"
           },
           "dev": {
-            "status": "excepted",
-            "reason_code": "first_gate_followup",
-            "reason_detail": "This grouped family is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+            "status": "covered"
           },
           "lower-privilege": {
-            "status": "excepted",
-            "reason_code": "first_gate_followup",
-            "reason_detail": "This grouped family is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+            "status": "covered"
+          }
+        }
+      },
+      "compute-control": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
           }
         }
       },
@@ -719,6 +675,20 @@
         }
       },
       "escalation-path": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "logic-apps": {
         "status": "covered",
         "viewpoints": {
           "admin": {

@@ -1,0 +1,98 @@
+name: Repo CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  secret-scan:
+    name: Secret Scan (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
+
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    needs:
+      - secret-scan
+    if: always()
+    steps:
+      - name: Preserve required gitleaks check context
+        run: |
+          set -euo pipefail
+          if [ "${{ needs.secret-scan.result }}" != "success" ]; then
+            echo "Secret Scan (Gitleaks) failed." >&2
+            exit 1
+          fi
+
+  go-format-check:
+    name: Go Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Check formatting
+        run: |
+          set -euo pipefail
+          unformatted="$(gofmt -l ./cmd ./internal)"
+          if [ -n "$unformatted" ]; then
+            echo "The following files need gofmt:" >&2
+            echo "$unformatted" >&2
+            exit 1
+          fi
+
+  go-unit-tests:
+    name: Go Unit Tests
+    runs-on: ubuntu-latest
+    needs:
+      - go-format-check
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Run unit tests
+        run: go test ./...
+
+  test:
+    runs-on: ubuntu-latest
+    needs:
+      - go-format-check
+      - go-unit-tests
+    if: always()
+    steps:
+      - name: Preserve required test check context
+        run: |
+          set -euo pipefail
+          if [ "${{ needs.go-format-check.result }}" != "success" ]; then
+            echo "Go Format Check failed." >&2
+            exit 1
+          fi
+          if [ "${{ needs.go-unit-tests.result }}" != "success" ]; then
+            echo "Go Unit Tests failed." >&2
+            exit 1
+          fi

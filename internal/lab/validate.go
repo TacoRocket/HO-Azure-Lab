@@ -392,6 +392,50 @@ func groupedSelectionKey(groupCommand string) string {
 	}
 }
 
+func groupedFamilyIdentityKey(groupCommand string) string {
+	switch groupCommand {
+	case "chains":
+		return "family"
+	case "persistence":
+		return "surface"
+	default:
+		return ""
+	}
+}
+
+func groupedFamilyTopLevelFields(groupCommand string) []string {
+	switch groupCommand {
+	case "chains":
+		return []string{
+			"metadata",
+			"grouped_command_name",
+			"family",
+			"input_mode",
+			"command_state",
+			"summary",
+			"claim_boundary",
+			"artifact_preference_order",
+			"backing_commands",
+			"source_artifacts",
+			"paths",
+			"issues",
+		}
+	case "persistence":
+		return []string{
+			"metadata",
+			"grouped_command_name",
+			"surface",
+			"input_mode",
+			"command_state",
+			"summary",
+			"backing_commands",
+			"issues",
+		}
+	default:
+		return nil
+	}
+}
+
 func makeBlockingFinding(findingID, summary, likelySeam, expectedOutcome string) Finding {
 	return Finding{
 		ID:              findingID,
@@ -2540,252 +2584,6 @@ func rowIntPtr(row map[string]any, key string) *int {
 	}
 }
 
-func findPrincipalRow(payload map[string]any, principalID string) map[string]any {
-	rows, _ := payload["principals"].([]any)
-	for _, row := range rows {
-		rowMap, ok := row.(map[string]any)
-		if !ok {
-			continue
-		}
-		if rowID, _ := rowMap["id"].(string); rowID == principalID {
-			return rowMap
-		}
-	}
-	return nil
-}
-
-func findPermissionRow(payload map[string]any, principalID string) map[string]any {
-	rows, _ := payload["permissions"].([]any)
-	for _, row := range rows {
-		rowMap, ok := row.(map[string]any)
-		if !ok {
-			continue
-		}
-		if rowID, _ := rowMap["principal_id"].(string); rowID == principalID {
-			return rowMap
-		}
-	}
-	return nil
-}
-
-func findPrivescCurrentIdentityPath(payload map[string]any) map[string]any {
-	rows, _ := payload["paths"].([]any)
-	for _, row := range rows {
-		rowMap, ok := row.(map[string]any)
-		if !ok {
-			continue
-		}
-		currentIdentity, _ := rowMap["current_identity"].(bool)
-		pathType, _ := rowMap["path_type"].(string)
-		if currentIdentity && pathType == "current-foothold-direct-control" {
-			return rowMap
-		}
-	}
-	return nil
-}
-
-func validateWhoAmIPrincipalConsistency(viewpoint string, whoamiPayload, principalsPayload map[string]any) []Finding {
-	if whoamiPayload == nil || principalsPayload == nil {
-		return nil
-	}
-
-	principal, _ := whoamiPayload["principal"].(map[string]any)
-	principalID, _ := principal["id"].(string)
-	if strings.TrimSpace(principalID) == "" {
-		return []Finding{makeBlockingFinding(
-			fmt.Sprintf("commands-whoami-%s-missing-principal-id", viewpoint),
-			fmt.Sprintf("commands whoami (%s) did not report principal.id, so the validator cannot compare it to principals output", viewpoint),
-			"whoami current principal rendering",
-			"whoami should identify the current principal clearly enough for cross-command consistency checks",
-		)}
-	}
-
-	principalRow := findPrincipalRow(principalsPayload, principalID)
-	if principalRow == nil {
-		return []Finding{makeBlockingFinding(
-			fmt.Sprintf("commands-whoami-%s-principal-not-visible-in-principals", viewpoint),
-			fmt.Sprintf("commands whoami (%s) identified principal.id %q, but commands principals (%s) did not surface that same principal", viewpoint, principalID, viewpoint),
-			"principals current principal visibility or whoami current principal rendering",
-			"whoami and principals should stay consistent about the current principal when both commands succeed for the same viewpoint",
-		)}
-	}
-
-	whoamiTypeRaw, _ := principal["principal_type"].(string)
-	principalsTypeRaw, _ := principalRow["principal_type"].(string)
-	whoamiType := normalizePrincipalType(whoamiTypeRaw)
-	principalsType := normalizePrincipalType(principalsTypeRaw)
-	findings := []Finding{}
-	if whoamiType != "" && principalsType != "" && whoamiType != principalsType {
-		findings = append(findings, makeBlockingFinding(
-			fmt.Sprintf("commands-whoami-%s-principal-type-drift", viewpoint),
-			fmt.Sprintf("commands whoami (%s) reports principal_type %q, but commands principals (%s) reports %q for the same principal.id %q", viewpoint, whoamiTypeRaw, viewpoint, principalsTypeRaw, principalID),
-			"whoami and principals principal typing for the current principal",
-			"whoami and principals should classify the same principal consistently when both commands succeed for the same viewpoint",
-		))
-	}
-
-	if isCurrentIdentity, ok := principalRow["is_current_identity"].(bool); !ok || !isCurrentIdentity {
-		findings = append(findings, makeBlockingFinding(
-			fmt.Sprintf("commands-whoami-%s-principals-current-identity-drift", viewpoint),
-			fmt.Sprintf("commands principals (%s) surfaced principal.id %q but did not keep it marked as the current identity", viewpoint, principalID),
-			"principals current identity marking",
-			"principals should keep the same principal marked as current when whoami identifies it as the active Azure session",
-		))
-	}
-
-	return findings
-}
-
-func validateWhoAmIPermissionsConsistency(viewpoint string, whoamiPayload, permissionsPayload map[string]any) []Finding {
-	if whoamiPayload == nil || permissionsPayload == nil {
-		return nil
-	}
-
-	principal, _ := whoamiPayload["principal"].(map[string]any)
-	principalID, _ := principal["id"].(string)
-	if strings.TrimSpace(principalID) == "" {
-		return nil
-	}
-
-	permissionRow := findPermissionRow(permissionsPayload, principalID)
-	if permissionRow == nil {
-		return []Finding{makeBlockingFinding(
-			fmt.Sprintf("commands-whoami-%s-principal-not-visible-in-permissions", viewpoint),
-			fmt.Sprintf("commands whoami (%s) identified principal.id %q, but commands permissions (%s) did not surface that same principal", viewpoint, principalID, viewpoint),
-			"permissions current principal visibility or whoami current principal rendering",
-			"whoami and permissions should stay consistent about the current principal when both commands succeed for the same viewpoint",
-		)}
-	}
-
-	whoamiTypeRaw, _ := principal["principal_type"].(string)
-	permissionsTypeRaw, _ := permissionRow["principal_type"].(string)
-	whoamiType := normalizePrincipalType(whoamiTypeRaw)
-	permissionsType := normalizePrincipalType(permissionsTypeRaw)
-	findings := []Finding{}
-	if whoamiType != "" && permissionsType != "" && whoamiType != permissionsType {
-		findings = append(findings, makeBlockingFinding(
-			fmt.Sprintf("commands-whoami-%s-permissions-principal-type-drift", viewpoint),
-			fmt.Sprintf("commands whoami (%s) reports principal_type %q, but commands permissions (%s) reports %q for the same principal.id %q", viewpoint, whoamiTypeRaw, viewpoint, permissionsTypeRaw, principalID),
-			"whoami and permissions principal typing for the current principal",
-			"whoami and permissions should classify the same principal consistently when both commands succeed for the same viewpoint",
-		))
-	}
-
-	if isCurrentIdentity, ok := permissionRow["is_current_identity"].(bool); ok && !isCurrentIdentity {
-		findings = append(findings, makeBlockingFinding(
-			fmt.Sprintf("commands-whoami-%s-permissions-current-identity-drift", viewpoint),
-			fmt.Sprintf("commands permissions (%s) surfaced principal.id %q but did not keep it marked as the current identity", viewpoint, principalID),
-			"permissions current identity marking",
-			"permissions should keep the same principal marked as current when whoami identifies it as the active Azure session",
-		))
-	}
-
-	return findings
-}
-
-func validateWhoAmIRbacConsistency(viewpoint string, whoamiPayload, rbacPayload map[string]any) []Finding {
-	if whoamiPayload == nil || rbacPayload == nil {
-		return nil
-	}
-
-	principal, _ := whoamiPayload["principal"].(map[string]any)
-	principalID, _ := principal["id"].(string)
-	if strings.TrimSpace(principalID) == "" {
-		return nil
-	}
-
-	findings := []Finding{}
-	principalRow := findPrincipalRow(rbacPayload, principalID)
-	if principalRow == nil {
-		findings = append(findings, makeBlockingFinding(
-			fmt.Sprintf("commands-whoami-%s-principal-not-visible-in-rbac-principals", viewpoint),
-			fmt.Sprintf("commands whoami (%s) identified principal.id %q, but commands rbac (%s) did not keep that principal visible in its principals list", viewpoint, principalID, viewpoint),
-			"rbac principal visibility or whoami current principal rendering",
-			"whoami and rbac should stay consistent about the current principal when both commands succeed for the same viewpoint",
-		))
-		return findings
-	}
-
-	whoamiTypeRaw, _ := principal["principal_type"].(string)
-	rbacTypeRaw, _ := principalRow["principal_type"].(string)
-	whoamiType := normalizePrincipalType(whoamiTypeRaw)
-	rbacType := normalizePrincipalType(rbacTypeRaw)
-	if whoamiType != "" && rbacType != "" && whoamiType != rbacType {
-		findings = append(findings, makeBlockingFinding(
-			fmt.Sprintf("commands-whoami-%s-rbac-principal-type-drift", viewpoint),
-			fmt.Sprintf("commands whoami (%s) reports principal_type %q, but commands rbac (%s) reports %q for the same principal.id %q", viewpoint, whoamiTypeRaw, viewpoint, rbacTypeRaw, principalID),
-			"whoami and rbac principal typing for the current principal",
-			"whoami and rbac should classify the same principal consistently when both commands succeed for the same viewpoint",
-		))
-	}
-
-	return findings
-}
-
-func validateWhoAmIPrivescConsistency(viewpoint string, whoamiPayload, permissionsPayload, privescPayload map[string]any) []Finding {
-	if whoamiPayload == nil || privescPayload == nil {
-		return nil
-	}
-
-	principal, _ := whoamiPayload["principal"].(map[string]any)
-	principalID, _ := principal["id"].(string)
-	if strings.TrimSpace(principalID) == "" {
-		return nil
-	}
-
-	findings := []Finding{}
-	permissionRow := findPermissionRow(permissionsPayload, principalID)
-	currentPath := findPrivescCurrentIdentityPath(privescPayload)
-	if currentPath == nil {
-		if permissionRow != nil {
-			if privileged, ok := permissionRow["privileged"].(bool); ok && privileged {
-				findings = append(findings, makeBlockingFinding(
-					fmt.Sprintf("commands-whoami-%s-privesc-current-identity-path-missing", viewpoint),
-					fmt.Sprintf("commands permissions (%s) marks principal.id %q as privileged, but commands privesc (%s) did not return a current-foothold-direct-control path", viewpoint, principalID, viewpoint),
-					"privesc current identity path visibility or permissions/privesc consistency",
-					"privesc should keep the current direct-control foothold visible when permissions already shows the current principal as privileged",
-				))
-			}
-		}
-		return findings
-	}
-
-	pathPrincipalID, _ := currentPath["principal_id"].(string)
-	if permissionRow != nil {
-		if privileged, ok := permissionRow["privileged"].(bool); ok && !privileged && pathPrincipalID == principalID {
-			findings = append(findings, makeBlockingFinding(
-				fmt.Sprintf("commands-whoami-%s-privesc-non-privileged-current-path", viewpoint),
-				fmt.Sprintf("commands permissions (%s) marks principal.id %q as not privileged, but commands privesc (%s) still returned a current-foothold-direct-control path for that same principal", viewpoint, principalID, viewpoint),
-				"privesc current identity path visibility or permissions/privesc consistency",
-				"privesc should not invent a current direct-control foothold when permissions does not show the current principal as privileged",
-			))
-		}
-	}
-	if pathPrincipalID != principalID {
-		findings = append(findings, makeBlockingFinding(
-			fmt.Sprintf("commands-whoami-%s-privesc-principal-id-drift", viewpoint),
-			fmt.Sprintf("commands whoami (%s) identified principal.id %q, but commands privesc (%s) rooted its current-foothold-direct-control path in %q", viewpoint, principalID, viewpoint, pathPrincipalID),
-			"privesc current identity anchoring",
-			"privesc should root the current direct-control path in the same principal identified by whoami",
-		))
-	}
-
-	whoamiTypeRaw, _ := principal["principal_type"].(string)
-	privescTypeRaw, _ := currentPath["principal_type"].(string)
-	whoamiType := normalizePrincipalType(whoamiTypeRaw)
-	privescType := normalizePrincipalType(privescTypeRaw)
-	if whoamiType != "" && privescType != "" && whoamiType != privescType {
-		findings = append(findings, makeBlockingFinding(
-			fmt.Sprintf("commands-whoami-%s-privesc-principal-type-drift", viewpoint),
-			fmt.Sprintf("commands whoami (%s) reports principal_type %q, but commands privesc (%s) reports %q for the current-foothold-direct-control path", viewpoint, whoamiTypeRaw, viewpoint, privescTypeRaw),
-			"whoami and privesc principal typing for the current foothold",
-			"whoami and privesc should classify the same current foothold consistently when both commands succeed for the same viewpoint",
-		))
-	}
-
-	return findings
-}
-
 func ValidateLiveRun(runResultsPath, hoAzureDir string) (LiveValidationSummary, error) {
 	runResults := RunResult{}
 	if err := LoadJSON(runResultsPath, &runResults); err != nil {
@@ -2842,10 +2640,13 @@ func ValidateLiveRun(runResultsPath, hoAzureDir string) (LiveValidationSummary, 
 		}
 
 		contractName := entry.SurfaceName
+		expectedFields := []string{}
 		if entry.SurfaceKind == "families" {
 			contractName = surface.FamilyGroupCommands[entry.SurfaceName]
+			expectedFields = groupedFamilyTopLevelFields(contractName)
+		} else {
+			expectedFields = surface.CommandTopLevelFields[contractName]
 		}
-		expectedFields := surface.CommandTopLevelFields[contractName]
 		missingFields := []string{}
 		for _, field := range expectedFields {
 			if _, ok := payload[field]; !ok {
@@ -2864,14 +2665,14 @@ func ValidateLiveRun(runResultsPath, hoAzureDir string) (LiveValidationSummary, 
 
 		if entry.SurfaceKind == "families" {
 			groupCommand := surface.FamilyGroupCommands[entry.SurfaceName]
-			selectedKey := groupedSelectionKey(groupCommand)
-			if selectedKey != "" {
-				if selected, _ := payload[selectedKey].(string); selected != entry.SurfaceName {
+			identityKey := groupedFamilyIdentityKey(groupCommand)
+			if identityKey != "" {
+				if selected, _ := payload[identityKey].(string); selected != entry.SurfaceName {
 					findings = append(findings, makeBlockingFinding(
 						fmt.Sprintf("%s-%s-%s-selection-mismatch", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint),
 						label+" did not identify itself cleanly in the grouped payload",
 						groupCommand+" grouped output selection fields",
-						fmt.Sprintf("grouped payloads should set %s to %s", selectedKey, entry.SurfaceName),
+						fmt.Sprintf("grouped payloads should set %s to %s", identityKey, entry.SurfaceName),
 					))
 					continue
 				}
@@ -2881,7 +2682,12 @@ func ValidateLiveRun(runResultsPath, hoAzureDir string) (LiveValidationSummary, 
 		if err != nil {
 			return LiveValidationSummary{}, err
 		}
+		liveInventoryContext, err := loadLiveInventoryContext(payloadPath)
+		if err != nil {
+			return LiveValidationSummary{}, err
+		}
 		findings = append(findings, validateWhoAmIPayloadAgainstAzureContext(entry, label, payload, liveContext)...)
+		findings = append(findings, validateInventoryPayloadAgainstAzureContext(entry, label, payload, liveInventoryContext)...)
 		liveManagedIdentitiesContext, err := loadLiveManagedIdentitiesContext(payloadPath)
 		if err != nil {
 			return LiveValidationSummary{}, err
@@ -2902,6 +2708,41 @@ func ValidateLiveRun(runResultsPath, hoAzureDir string) (LiveValidationSummary, 
 			return LiveValidationSummary{}, err
 		}
 		findings = append(findings, validateFunctionsPayloadAgainstAzureContext(entry, label, payload, liveFunctionsContext)...)
+		liveEnvVarsContext, err := loadLiveEnvVarsContext(payloadPath)
+		if err != nil {
+			return LiveValidationSummary{}, err
+		}
+		findings = append(findings, validateEnvVarsPayloadAgainstAzureContext(entry, label, payload, liveEnvVarsContext)...)
+		liveTokensCredentialsContext, err := loadLiveTokensCredentialsContext(payloadPath)
+		if err != nil {
+			return LiveValidationSummary{}, err
+		}
+		findings = append(findings, validateTokensCredentialsPayloadAgainstAzureContext(entry, label, payload, liveTokensCredentialsContext)...)
+		liveAppCredentialsContext, err := loadLiveAppCredentialsContext(payloadPath)
+		if err != nil {
+			return LiveValidationSummary{}, err
+		}
+		findings = append(findings, validateAppCredentialsPayloadAgainstAzureContext(entry, label, payload, liveAppCredentialsContext)...)
+		liveAuthPoliciesContext, err := loadLiveAuthPoliciesContext(payloadPath)
+		if err != nil {
+			return LiveValidationSummary{}, err
+		}
+		findings = append(findings, validateAuthPoliciesPayloadAgainstAzureContext(entry, label, payload, liveAuthPoliciesContext)...)
+		liveCrossTenantContext, err := loadLiveCrossTenantContext(payloadPath)
+		if err != nil {
+			return LiveValidationSummary{}, err
+		}
+		findings = append(findings, validateCrossTenantPayloadAgainstAzureContext(entry, label, payload, liveCrossTenantContext)...)
+		liveRoleTrustsContext, err := loadLiveRoleTrustsContext(payloadPath)
+		if err != nil {
+			return LiveValidationSummary{}, err
+		}
+		findings = append(findings, validateRoleTrustsPayloadAgainstAzureContext(entry, label, payload, liveRoleTrustsContext)...)
+		liveArmDeploymentsContext, err := loadLiveArmDeploymentsContext(payloadPath)
+		if err != nil {
+			return LiveValidationSummary{}, err
+		}
+		findings = append(findings, validateArmDeploymentsPayloadAgainstAzureContext(entry, label, payload, liveArmDeploymentsContext)...)
 		liveDNSContext, err := loadLiveDNSContext(payloadPath)
 		if err != nil {
 			return LiveValidationSummary{}, err
@@ -2967,11 +2808,112 @@ func ValidateLiveRun(runResultsPath, hoAzureDir string) (LiveValidationSummary, 
 			return LiveValidationSummary{}, err
 		}
 		findings = append(findings, validateDatabasesPayloadAgainstAzureContext(entry, label, payload, liveDatabasesContext)...)
+		liveKeyVaultContext, err := loadLiveKeyVaultContext(payloadPath)
+		if err != nil {
+			return LiveValidationSummary{}, err
+		}
+		findings = append(findings, validateKeyVaultPayloadAgainstAzureContext(entry, label, payload, liveKeyVaultContext)...)
 		liveStorageContext, err := loadLiveStorageContext(payloadPath)
 		if err != nil {
 			return LiveValidationSummary{}, err
 		}
 		findings = append(findings, validateStoragePayloadAgainstAzureContext(entry, label, payload, liveStorageContext)...)
+		findings = append(findings, validateCredentialPathPayloadAgainstAzureContext(entry, label, payload, liveEnvVarsContext, liveTokensCredentialsContext, liveDatabasesContext, liveKeyVaultContext, liveStorageContext)...)
+		if entry.SurfaceKind == "families" && entry.SurfaceName == "escalation-path" {
+			permissionsPayload, permissionsErr := loadSiblingCommandPayload(payloadPath, "permissions", entry.Viewpoint)
+			if permissionsErr != nil {
+				findings = append(findings, makeBlockingFinding(
+					fmt.Sprintf("%s-%s-%s-missing-permissions-source", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint),
+					label+" passed but the sibling permissions payload could not be loaded for escalation validation",
+					"lab runner sibling source payload capture",
+					"targeted escalation-path validation should keep the matching permissions payload available in the same run",
+				))
+			} else {
+				roleTrustsPayload, roleTrustsErr := loadSiblingCommandPayload(payloadPath, "role-trusts", entry.Viewpoint)
+				if roleTrustsErr != nil {
+					findings = append(findings, makeBlockingFinding(
+						fmt.Sprintf("%s-%s-%s-missing-role-trusts-source", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint),
+						label+" passed but the sibling role-trusts payload could not be loaded for escalation validation",
+						"lab runner sibling source payload capture",
+						"targeted escalation-path validation should keep the matching role-trusts payload available in the same run",
+					))
+				} else {
+					findings = append(findings, validateEscalationPathPayloadAgainstSourceTruth(entry, label, payload, permissionsPayload, roleTrustsPayload)...)
+				}
+			}
+		}
+		if entry.SurfaceKind == "families" && entry.SurfaceName == "automation" && surface.FamilyGroupCommands[entry.SurfaceName] == "persistence" {
+			automationPayload, automationErr := loadSiblingCommandPayload(payloadPath, "automation", entry.Viewpoint)
+			if automationErr != nil {
+				findings = append(findings, makeBlockingFinding(
+					fmt.Sprintf("%s-%s-%s-missing-automation-source", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint),
+					label+" passed but the sibling automation payload could not be loaded for persistence validation",
+					"lab runner sibling source payload capture",
+					"targeted persistence automation validation should keep the matching automation payload available in the same run",
+				))
+			} else {
+				permissionsPayload, permissionsErr := loadSiblingCommandPayload(payloadPath, "permissions", entry.Viewpoint)
+				if permissionsErr != nil {
+					findings = append(findings, makeBlockingFinding(
+						fmt.Sprintf("%s-%s-%s-missing-permissions-source", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint),
+						label+" passed but the sibling permissions payload could not be loaded for persistence validation",
+						"lab runner sibling source payload capture",
+						"targeted persistence automation validation should keep the matching permissions payload available in the same run",
+					))
+				} else {
+					rbacPayload, rbacErr := loadSiblingCommandPayload(payloadPath, "rbac", entry.Viewpoint)
+					if rbacErr != nil {
+						findings = append(findings, makeBlockingFinding(
+							fmt.Sprintf("%s-%s-%s-missing-rbac-source", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint),
+							label+" passed but the sibling rbac payload could not be loaded for persistence validation",
+							"lab runner sibling source payload capture",
+							"targeted persistence automation validation should keep the matching rbac payload available in the same run",
+						))
+					} else {
+						findings = append(findings, validatePersistenceAutomationPayloadAgainstSourceTruth(entry, label, payload, automationPayload, permissionsPayload, rbacPayload)...)
+					}
+				}
+			}
+		}
+		if entry.SurfaceKind == "families" && entry.SurfaceName == "logic-apps" && surface.FamilyGroupCommands[entry.SurfaceName] == "persistence" {
+			logicAppsPayload, logicAppsErr := loadSiblingCommandPayload(payloadPath, "logic-apps", entry.Viewpoint)
+			if logicAppsErr != nil {
+				findings = append(findings, makeBlockingFinding(
+					fmt.Sprintf("%s-%s-%s-missing-logic-apps-source", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint),
+					label+" passed but the sibling logic-apps payload could not be loaded for persistence validation",
+					"lab runner sibling source payload capture",
+					"targeted persistence logic-apps validation should keep the matching logic-apps payload available in the same run",
+				))
+			} else {
+				permissionsPayload, permissionsErr := loadSiblingCommandPayload(payloadPath, "permissions", entry.Viewpoint)
+				if permissionsErr != nil {
+					findings = append(findings, makeBlockingFinding(
+						fmt.Sprintf("%s-%s-%s-missing-permissions-source", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint),
+						label+" passed but the sibling permissions payload could not be loaded for persistence validation",
+						"lab runner sibling source payload capture",
+						"targeted persistence logic-apps validation should keep the matching permissions payload available in the same run",
+					))
+				} else {
+					rbacPayload, rbacErr := loadSiblingCommandPayload(payloadPath, "rbac", entry.Viewpoint)
+					if rbacErr != nil {
+						findings = append(findings, makeBlockingFinding(
+							fmt.Sprintf("%s-%s-%s-missing-rbac-source", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint),
+							label+" passed but the sibling rbac payload could not be loaded for persistence validation",
+							"lab runner sibling source payload capture",
+							"targeted persistence logic-apps validation should keep the matching rbac payload available in the same run",
+						))
+					} else {
+						findings = append(findings, validatePersistenceLogicAppsPayloadAgainstSourceTruth(entry, label, payload, logicAppsPayload, permissionsPayload, rbacPayload)...)
+					}
+				}
+			}
+		}
+		liveComputeControlContext, err := loadLiveComputeControlContext(payloadPath)
+		if err != nil {
+			return LiveValidationSummary{}, err
+		}
+		findings = append(findings, validateComputeControlPayloadAgainstAzureContext(entry, label, payload, liveComputeControlContext)...)
+		findings = append(findings, validateResourceTrustsPayloadAgainstAzureContext(entry, label, payload, liveStorageContext, liveKeyVaultContext)...)
 		liveSnapshotsDisksContext, err := loadLiveSnapshotsDisksContext(payloadPath)
 		if err != nil {
 			return LiveValidationSummary{}, err

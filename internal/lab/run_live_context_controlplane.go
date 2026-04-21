@@ -358,6 +358,16 @@ func captureLiveAzureMLContext(outdir, workingDir string, env []string, progress
 }
 
 func captureLiveEventGridContext(outdir, workingDir string, env []string, progressWriter io.Writer) error {
+	accountShowCmd := exec.Command("az", "account", "show", "--output", "json")
+	accountShowOutput, err := runProgressCommand("az account show (event-grid validation context)", workingDir, env, progressWriter, accountShowCmd)
+	if err != nil {
+		return fmt.Errorf("az account show failed: %s", strings.TrimSpace(string(accountShowOutput)))
+	}
+	account := azAccountShow{}
+	if err := json.Unmarshal(accountShowOutput, &account); err != nil {
+		return fmt.Errorf("parse az account show output: %w", err)
+	}
+
 	listCmd := exec.Command("az", "resource", "list", "--resource-type", "Microsoft.EventGrid/eventSubscriptions", "--output", "json")
 	listOutput, err := runProgressCommand("az resource list (event-grid validation context)", workingDir, env, progressWriter, listCmd)
 	if err != nil {
@@ -369,13 +379,48 @@ func captureLiveEventGridContext(outdir, workingDir string, env []string, progre
 		return fmt.Errorf("parse az resource list output: %w", err)
 	}
 
-	truths := make([]liveEventGridTruth, 0, len(listedRoutes))
+	topicTypes, err := eventGridListARMObjects(workingDir, env, progressWriter, "/providers/Microsoft.EventGrid/topicTypes", "az rest (event-grid topic types validation context)")
+	if err != nil {
+		return err
+	}
+	locations, err := eventGridSubscriptionLocationsFromAzure(workingDir, env, progressWriter)
+	if err != nil {
+		return err
+	}
+	scopedItems, err := eventGridItemsFromEnumerationScopes(
+		eventGridEnumerationScopesFromAzure(strings.TrimSpace(account.ID), topicTypes, locations),
+		func(scope eventGridEnumerationScope) ([]map[string]any, error) {
+			return eventGridListARMObjects(workingDir, env, progressWriter, scope.path, "az rest (event-grid scoped validation context)")
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	routeIDs := map[string]struct{}{}
 	for _, listed := range listedRoutes {
 		resourceID := strings.TrimSpace(stringValue(listed["id"]))
 		if resourceID == "" {
 			continue
 		}
+		routeIDs[resourceID] = struct{}{}
+	}
+	for _, listed := range scopedItems {
+		resourceID := strings.TrimSpace(stringValue(listed["id"]))
+		if resourceID == "" {
+			continue
+		}
+		routeIDs[resourceID] = struct{}{}
+	}
 
+	resourceIDs := make([]string, 0, len(routeIDs))
+	for resourceID := range routeIDs {
+		resourceIDs = append(resourceIDs, resourceID)
+	}
+	sort.Strings(resourceIDs)
+
+	truths := make([]liveEventGridTruth, 0, len(resourceIDs))
+	for _, resourceID := range resourceIDs {
 		showCmd := exec.Command("az", "resource", "show", "--ids", resourceID, "--api-version", eventGridValidationAPIVersion, "--output", "json")
 		showOutput, err := runProgressCommand("az resource show (event-grid validation context)", workingDir, env, progressWriter, showCmd)
 		if err != nil {
@@ -399,6 +444,189 @@ func captureLiveEventGridContext(outdir, workingDir string, env []string, progre
 		return fmt.Errorf("write live event-grid context artifact: %w", err)
 	}
 	return nil
+}
+
+type eventGridEnumerationScope struct {
+	path       string
+	issueScope string
+}
+
+func eventGridListARMObjects(workingDir string, env []string, progressWriter io.Writer, path, label string) ([]map[string]any, error) {
+	url := "https://management.azure.com" + strings.TrimSpace(path) + "?api-version=" + eventGridValidationAPIVersion
+	cmd := exec.Command("az", "rest", "--method", "get", "--url", url, "--output", "json")
+	output, err := runProgressCommand(label, workingDir, env, progressWriter, cmd)
+	if err != nil {
+		return nil, fmt.Errorf("az rest failed for %s: %s", strings.TrimSpace(path), strings.TrimSpace(string(output)))
+	}
+
+	response := azAutomationListResponse{}
+	if err := json.Unmarshal(output, &response); err != nil {
+		return nil, fmt.Errorf("parse az rest output for %s: %w", strings.TrimSpace(path), err)
+	}
+	return response.Value, nil
+}
+
+func eventGridSubscriptionLocationsFromAzure(workingDir string, env []string, progressWriter io.Writer) ([]string, error) {
+	resourceCmd := exec.Command("az", "resource", "list", "--query", "[].location", "--output", "json")
+	resourceOutput, err := runProgressCommand("az resource list (event-grid locations validation context)", workingDir, env, progressWriter, resourceCmd)
+	if err != nil {
+		return nil, fmt.Errorf("az resource list failed: %s", strings.TrimSpace(string(resourceOutput)))
+	}
+
+	rawLocations := []any{}
+	if err := json.Unmarshal(resourceOutput, &rawLocations); err != nil {
+		return nil, fmt.Errorf("parse az resource list output: %w", err)
+	}
+
+	locations := []string{}
+	for _, value := range rawLocations {
+		location := eventGridCanonicalLocation(stringValue(value))
+		if location == "" {
+			continue
+		}
+		locations = append(locations, location)
+	}
+	sort.Strings(locations)
+	return slices.Compact(locations), nil
+}
+
+func eventGridEnumerationScopesFromAzure(subscriptionID string, topicTypes []map[string]any, locations []string) []eventGridEnumerationScope {
+	scopes := []eventGridEnumerationScope{}
+	for _, topicType := range topicTypes {
+		name := strings.TrimSpace(mapStringValue(topicType, "name"))
+		if name == "" {
+			continue
+		}
+
+		properties := mapObjectValue(topicType, "properties")
+		if eventGridTopicTypeSupportsGlobalEnumerationFromAzure(properties) {
+			scopes = append(scopes, eventGridEnumerationScope{
+				path:       "/subscriptions/" + subscriptionID + "/providers/Microsoft.EventGrid/topicTypes/" + name + "/eventSubscriptions",
+				issueScope: "event-grid.topic-type[" + name + "]",
+			})
+		}
+		if !eventGridTopicTypeSupportsRegionalEnumerationFromAzure(properties) {
+			continue
+		}
+		for _, location := range eventGridTopicTypeLocationsFromAzure(properties, locations) {
+			scopes = append(scopes, eventGridEnumerationScope{
+				path:       "/subscriptions/" + subscriptionID + "/providers/Microsoft.EventGrid/locations/" + location + "/topicTypes/" + name + "/eventSubscriptions",
+				issueScope: "event-grid.topic-type[" + name + "@" + location + "]",
+			})
+		}
+	}
+	return scopes
+}
+
+func eventGridTopicTypeSupportsGlobalEnumerationFromAzure(properties map[string]any) bool {
+	if strings.EqualFold(mapStringValue(properties, "resourceRegionType", "resource_region_type"), "GlobalResource") {
+		return true
+	}
+	for _, key := range []string{"areRegionalAndGlobalSourcesSupported", "are_regional_and_global_sources_supported"} {
+		value, ok := properties[key].(bool)
+		if ok && value {
+			return true
+		}
+	}
+	for _, value := range listAnyValue(properties, "supportedScopesForSource", "supported_scopes_for_source") {
+		if strings.EqualFold(strings.TrimSpace(stringValue(value)), "AzureSubscription") {
+			return true
+		}
+	}
+	return false
+}
+
+func eventGridTopicTypeSupportsRegionalEnumerationFromAzure(properties map[string]any) bool {
+	if strings.EqualFold(mapStringValue(properties, "resourceRegionType", "resource_region_type"), "RegionalResource") {
+		return true
+	}
+	for _, value := range listAnyValue(properties, "supportedScopesForSource", "supported_scopes_for_source") {
+		text := strings.TrimSpace(stringValue(value))
+		if strings.EqualFold(text, "Resource") || strings.EqualFold(text, "ResourceGroup") {
+			return true
+		}
+	}
+	return false
+}
+
+func eventGridTopicTypeLocationsFromAzure(properties map[string]any, subscriptionLocations []string) []string {
+	supported := []string{}
+	for _, value := range listAnyValue(properties, "supportedLocations", "supported_locations") {
+		location := eventGridCanonicalLocation(stringValue(value))
+		if location == "" {
+			continue
+		}
+		supported = append(supported, location)
+	}
+	sort.Strings(supported)
+	supported = slices.Compact(supported)
+	if len(supported) == 0 {
+		return append([]string(nil), subscriptionLocations...)
+	}
+	if len(subscriptionLocations) == 0 {
+		return supported
+	}
+
+	available := map[string]struct{}{}
+	for _, location := range supported {
+		available[location] = struct{}{}
+	}
+
+	out := []string{}
+	for _, location := range subscriptionLocations {
+		if _, exists := available[location]; exists {
+			out = append(out, location)
+		}
+	}
+	sort.Strings(out)
+	return slices.Compact(out)
+}
+
+func eventGridItemsFromEnumerationScopes(
+	scopes []eventGridEnumerationScope,
+	listFn func(eventGridEnumerationScope) ([]map[string]any, error),
+) ([]map[string]any, error) {
+	items := []map[string]any{}
+	seen := map[string]struct{}{}
+
+	for _, scope := range scopes {
+		rows, err := listFn(scope)
+		if err != nil {
+			if eventGridIgnoreEnumerationError(err) {
+				continue
+			}
+			return nil, fmt.Errorf("%s: %w", scope.issueScope, err)
+		}
+		for _, row := range rows {
+			routeID := strings.TrimSpace(stringValue(row["id"]))
+			if routeID == "" {
+				items = append(items, row)
+				continue
+			}
+			if _, exists := seen[routeID]; exists {
+				continue
+			}
+			seen[routeID] = struct{}{}
+			items = append(items, row)
+		}
+	}
+
+	return items, nil
+}
+
+func eventGridCanonicalLocation(location string) string {
+	return strings.ReplaceAll(strings.ToLower(strings.TrimSpace(location)), " ", "")
+}
+
+func eventGridIgnoreEnumerationError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, ": 404") ||
+		strings.Contains(message, "resourcenotfound") ||
+		strings.Contains(message, "invalidresourcetype") ||
+		strings.Contains(message, "noregisteredproviderfound")
 }
 
 func automationChildResources(workingDir string, env []string, progressWriter io.Writer, accountID, childPath string) ([]map[string]any, error) {
