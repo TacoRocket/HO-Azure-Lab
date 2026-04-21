@@ -110,6 +110,25 @@ Azure ML note:
 - when AML is enabled, it should still use the same shared storage, key-vault, and container
   registry truth that the command validator expects
 
+Optional proof add-in note:
+
+- three richer follow-up proof lanes now use that same explicit second-pass pattern:
+  - `--enable-deployment-path-addin`
+  - `--enable-compute-control-addin`
+  - `--enable-persistence-addin`
+- when enabled, the Go setup flow applies them as their own follow-up infrastructure passes instead
+  of folding them into the core lab apply
+- keep them opt-in by default because they enrich grouped-family proof more than they help the
+  first-run base lab
+- the intended proof shape for each lane is:
+  - deployment-path:
+    Automation runbook + schedule + webhook
+  - compute-control:
+    one cleaner user-assigned-identity App Service workload
+  - persistence:
+    one recurrence-driven Logic App path
+- if one of those add-in passes fails, setup should warn clearly and leave the base lab intact
+
 That keeps the operator path simpler than shipping multiple near-duplicate tfvars files.
 
 The important rule is:

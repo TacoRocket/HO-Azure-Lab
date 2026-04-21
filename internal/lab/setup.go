@@ -31,6 +31,9 @@ type AzureSetupConfig struct {
 	EnableRoleTrustsCanary        bool
 	EnableDeploymentHistoryCanary bool
 	EnableAzureML                 bool
+	EnableDeploymentPathAddin     bool
+	EnableComputeControlAddin     bool
+	EnablePersistenceAddin        bool
 	EnableHumanUserViewpoints     bool
 	WriteOnly                     bool
 	TofuBinary                    string
@@ -81,6 +84,35 @@ func followUpInfrastructureSteps(config AzureSetupConfig) []followUpInfraStep {
 			},
 		})
 	}
+	if config.EnableDeploymentPathAddin {
+		steps = append(steps, followUpInfraStep{
+			Name: "Deployment Path Add-in",
+			Targets: []string{
+				"azurerm_automation_runbook.deployment_path[0]",
+				"azurerm_automation_schedule.deployment_path[0]",
+				"azurerm_automation_job_schedule.deployment_path[0]",
+				"azurerm_automation_webhook.deployment_path[0]",
+			},
+		})
+	}
+	if config.EnableComputeControlAddin {
+		steps = append(steps, followUpInfraStep{
+			Name: "Compute Control Add-in",
+			Targets: []string{
+				"azurerm_linux_web_app.compute_control[0]",
+			},
+		})
+	}
+	if config.EnablePersistenceAddin {
+		steps = append(steps, followUpInfraStep{
+			Name: "Persistence Add-in",
+			Targets: []string{
+				"azurerm_logic_app_workflow.persistence[0]",
+				"azurerm_logic_app_trigger_recurrence.persistence[0]",
+				"azurerm_logic_app_action_http.persistence[0]",
+			},
+		})
+	}
 	return steps
 }
 
@@ -102,6 +134,9 @@ func BuildAzureSetupTFVars(config AzureSetupConfig) map[string]any {
 		"enable_role_trusts_canary":        config.EnableRoleTrustsCanary,
 		"enable_deployment_history_canary": config.EnableDeploymentHistoryCanary,
 		"enable_azure_ml":                  config.EnableAzureML,
+		"enable_deployment_path_addin":     config.EnableDeploymentPathAddin,
+		"enable_compute_control_addin":     config.EnableComputeControlAddin,
+		"enable_persistence_addin":         config.EnablePersistenceAddin,
 	}
 }
 
@@ -137,6 +172,13 @@ func RunAzureSetup(config AzureSetupConfig) (string, int, error) {
 	outputPath := strings.TrimSpace(config.OutputPath)
 	if outputPath == "" {
 		outputPath = DefaultGeneratedTFVarsPath(infraDir)
+	}
+	if !filepath.IsAbs(outputPath) {
+		absOutputPath, err := filepath.Abs(outputPath)
+		if err != nil {
+			return "", 0, fmt.Errorf("resolve tfvars output path %q: %w", outputPath, err)
+		}
+		outputPath = absOutputPath
 	}
 	if err := WriteJSON(outputPath, BuildAzureSetupTFVars(config)); err != nil {
 		return "", 0, err

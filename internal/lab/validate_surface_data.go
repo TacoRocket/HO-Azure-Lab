@@ -35,6 +35,21 @@ func findStorageRowByID(payload map[string]any, storageID string) map[string]any
 	return nil
 }
 
+func findKeyVaultRowByID(payload map[string]any, vaultID string) map[string]any {
+	rows, _ := payload["key_vaults"].([]any)
+	for _, row := range rows {
+		rowMap, ok := row.(map[string]any)
+		if !ok {
+			continue
+		}
+		rowID, _ := rowMap["id"].(string)
+		if normalizeResourceID(rowID) == normalizeResourceID(vaultID) {
+			return rowMap
+		}
+	}
+	return nil
+}
+
 func storageFindingByID(payload map[string]any, findingID string) map[string]any {
 	rows, _ := payload["findings"].([]any)
 	for _, row := range rows {
@@ -48,6 +63,198 @@ func storageFindingByID(payload map[string]any, findingID string) map[string]any
 		}
 	}
 	return nil
+}
+
+func keyVaultFindingByID(payload map[string]any, findingID string) map[string]any {
+	rows, _ := payload["findings"].([]any)
+	for _, row := range rows {
+		rowMap, ok := row.(map[string]any)
+		if !ok {
+			continue
+		}
+		rowID, _ := rowMap["id"].(string)
+		if strings.TrimSpace(rowID) == strings.TrimSpace(findingID) {
+			return rowMap
+		}
+	}
+	return nil
+}
+
+func validateKeyVaultPayloadAgainstAzureContext(entry CommandLogEntry, label string, payload map[string]any, context *liveKeyVaultContextArtifact) []Finding {
+	if entry.SurfaceKind != "commands" || entry.SurfaceName != "keyvault" {
+		return nil
+	}
+	if context == nil {
+		return []Finding{makeBlockingFinding(
+			fmt.Sprintf("%s-%s-%s-missing-live-keyvault-context", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint),
+			label+" passed but did not record a live keyvault context artifact",
+			"lab runner keyvault context capture",
+			"keyvault validation should compare the tool payload against recorded Azure Key Vault truth instead of remembered rows",
+		)}
+	}
+
+	findings := []Finding{}
+	rows, _ := payload["key_vaults"].([]any)
+	if len(rows) != len(context.KeyVaults) {
+		findings = append(findings, makeBlockingFinding(
+			fmt.Sprintf("%s-%s-%s-count-drift", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint),
+			fmt.Sprintf("%s surfaced %d keyvault rows, but Azure-backed validation recorded %d visible rows", label, len(rows), len(context.KeyVaults)),
+			"keyvault row selection or Azure-backed validation context",
+			"keyvault should keep visible Key Vault rows aligned with the Azure vaults the current viewpoint can enumerate",
+		))
+	}
+
+	for _, truth := range context.KeyVaults {
+		row := findKeyVaultRowByID(payload, truth.ID)
+		if row == nil {
+			findings = append(findings, makeBlockingFinding(
+				fmt.Sprintf("%s-%s-%s-vault-missing", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint),
+				fmt.Sprintf("%s did not surface an Azure-visible Key Vault row for id %q", label, truth.ID),
+				"keyvault asset visibility or Azure-backed validation context",
+				"keyvault should keep visible Azure Key Vault assets visible when the current viewpoint can enumerate them",
+			))
+			continue
+		}
+
+		checkString := func(field string, expected string, equalFold bool, likelySeam string, expectedOutcome string) {
+			if strings.TrimSpace(expected) == "" {
+				return
+			}
+			observed, _ := row[field].(string)
+			if equalFold {
+				if strings.EqualFold(strings.TrimSpace(observed), strings.TrimSpace(expected)) {
+					return
+				}
+			} else if strings.TrimSpace(observed) == strings.TrimSpace(expected) {
+				return
+			}
+			findings = append(findings, makeBlockingFinding(
+				fmt.Sprintf("%s-%s-%s-%s-drift", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint, strings.ReplaceAll(field, "_", "-")),
+				fmt.Sprintf("%s surfaced keyvault id %q with %s %q, but Azure reports %q", label, truth.ID, field, observed, expected),
+				likelySeam,
+				expectedOutcome,
+			))
+		}
+		checkBool := func(field string, expected bool, likelySeam string, expectedOutcome string) {
+			observed := rowBoolPtr(row, field)
+			if observed != nil && *observed == expected {
+				return
+			}
+			findings = append(findings, makeBlockingFinding(
+				fmt.Sprintf("%s-%s-%s-%s-drift", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint, strings.ReplaceAll(field, "_", "-")),
+				fmt.Sprintf("%s surfaced keyvault id %q with %s %v, but Azure reports %v", label, truth.ID, field, row[field], expected),
+				likelySeam,
+				expectedOutcome,
+			))
+		}
+		checkInt := func(field string, expected int, likelySeam string, expectedOutcome string) {
+			observed, _ := row[field].(float64)
+			if int(observed) == expected {
+				return
+			}
+			findings = append(findings, makeBlockingFinding(
+				fmt.Sprintf("%s-%s-%s-%s-drift", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint, strings.ReplaceAll(field, "_", "-")),
+				fmt.Sprintf("%s surfaced keyvault id %q with %s %d, but Azure reports %d", label, truth.ID, field, int(observed), expected),
+				likelySeam,
+				expectedOutcome,
+			))
+		}
+
+		checkString("name", truth.Name, false, "keyvault naming or Azure-backed validation context", "keyvault should keep the vault name aligned with the Azure asset it is summarizing")
+		checkString("resource_group", truth.ResourceGroup, true, "keyvault resource-group rendering or Azure-backed validation context", "keyvault should keep the resource group aligned with the Azure vault it is summarizing")
+		checkString("location", truth.Location, true, "keyvault location rendering or Azure-backed validation context", "keyvault should keep the vault location aligned with the Azure asset it is summarizing")
+		checkString("vault_uri", truth.VaultURI, false, "keyvault URI rendering or Azure-backed validation context", "keyvault should keep the vault URI aligned with the Azure vault it is summarizing")
+		checkString("public_network_access", truth.PublicNetworkAccess, true, "keyvault network posture rendering or Azure-backed validation context", "keyvault should keep public-network posture aligned with the Azure vault it is summarizing")
+		checkString("network_default_action", truth.NetworkDefaultAction, true, "keyvault firewall rendering or Azure-backed validation context", "keyvault should keep firewall default-action posture aligned with the Azure vault it is summarizing")
+		checkString("sku_name", truth.SKUName, true, "keyvault sku rendering or Azure-backed validation context", "keyvault should keep SKU cues aligned with the Azure vault it is summarizing")
+		checkString("tenant_id", truth.TenantID, false, "keyvault tenant rendering or Azure-backed validation context", "keyvault should keep tenant context aligned with the Azure vault it is summarizing")
+		checkBool("private_endpoint_enabled", truth.PrivateEndpointEnabled, "keyvault private-endpoint rendering or Azure-backed validation context", "keyvault should preserve whether Azure currently shows a private endpoint connection on a visible vault")
+		checkBool("enable_rbac_authorization", truth.EnableRBACAuthorization, "keyvault RBAC mode rendering or Azure-backed validation context", "keyvault should preserve whether Azure currently uses RBAC authorization on a visible vault")
+		checkBool("purge_protection_enabled", truth.PurgeProtectionEnabled, "keyvault purge-protection rendering or Azure-backed validation context", "keyvault should preserve whether purge protection is enabled on a visible vault")
+		checkBool("soft_delete_enabled", truth.SoftDeleteEnabled, "keyvault soft-delete rendering or Azure-backed validation context", "keyvault should preserve whether soft delete is enabled on a visible vault")
+		checkInt("access_policy_count", truth.AccessPolicyCount, "keyvault access-policy rendering or Azure-backed validation context", "keyvault should preserve access-policy counts aligned with the Azure vault it is summarizing")
+
+		publicNetworkEnabled := strings.EqualFold(strings.TrimSpace(truth.PublicNetworkAccess), "Enabled")
+		defaultActionAllow := strings.EqualFold(strings.TrimSpace(truth.NetworkDefaultAction), "Allow")
+		implicitOpenACL := publicNetworkEnabled && strings.TrimSpace(truth.NetworkDefaultAction) == ""
+
+		openFinding := keyVaultFindingByID(payload, "keyvault-public-network-open-"+truth.ID)
+		enabledFinding := keyVaultFindingByID(payload, "keyvault-public-network-enabled-"+truth.ID)
+		hybridFinding := keyVaultFindingByID(payload, "keyvault-public-network-with-private-endpoint-"+truth.ID)
+		purgeFinding := keyVaultFindingByID(payload, "keyvault-purge-protection-disabled-"+truth.ID)
+
+		expectedOpen := publicNetworkEnabled && (defaultActionAllow || implicitOpenACL) && !truth.PrivateEndpointEnabled
+		expectedEnabled := publicNetworkEnabled && !defaultActionAllow && !implicitOpenACL && !truth.PrivateEndpointEnabled
+		expectedHybrid := publicNetworkEnabled && truth.PrivateEndpointEnabled
+		expectedPurge := !truth.PurgeProtectionEnabled
+
+		if expectedOpen && openFinding == nil {
+			findings = append(findings, makeBlockingFinding(
+				fmt.Sprintf("%s-%s-%s-open-finding-missing", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint),
+				fmt.Sprintf("%s omitted the shipped public-network-open finding for keyvault id %q even though Azure reports an open public posture", label, truth.ID),
+				"keyvault findings rendering or Azure-backed validation context",
+				"keyvault should emit the shipped open-public finding whenever Azure shows an open public network posture without Private Link",
+			))
+		}
+		if !expectedOpen && openFinding != nil {
+			findings = append(findings, makeBlockingFinding(
+				fmt.Sprintf("%s-%s-%s-unexpected-open-finding", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint),
+				fmt.Sprintf("%s emitted a public-network-open finding for keyvault id %q, but Azure does not currently show that open public posture", label, truth.ID),
+				"keyvault findings rendering or Azure-backed validation context",
+				"keyvault should not overclaim an open public posture when Azure does not show it",
+			))
+		}
+		if expectedEnabled && enabledFinding == nil {
+			findings = append(findings, makeBlockingFinding(
+				fmt.Sprintf("%s-%s-%s-enabled-finding-missing", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint),
+				fmt.Sprintf("%s omitted the shipped public-network-enabled finding for keyvault id %q even though Azure reports a public path without Private Link", label, truth.ID),
+				"keyvault findings rendering or Azure-backed validation context",
+				"keyvault should emit the shipped public-path finding whenever Azure keeps public network access enabled without Private Link",
+			))
+		}
+		if !expectedEnabled && enabledFinding != nil {
+			findings = append(findings, makeBlockingFinding(
+				fmt.Sprintf("%s-%s-%s-unexpected-enabled-finding", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint),
+				fmt.Sprintf("%s emitted a public-network-enabled finding for keyvault id %q, but Azure does not currently show that posture", label, truth.ID),
+				"keyvault findings rendering or Azure-backed validation context",
+				"keyvault should not overclaim a medium public-path posture when Azure does not show it",
+			))
+		}
+		if expectedHybrid && hybridFinding == nil {
+			findings = append(findings, makeBlockingFinding(
+				fmt.Sprintf("%s-%s-%s-hybrid-finding-missing", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint),
+				fmt.Sprintf("%s omitted the shipped public-network-with-private-endpoint finding for keyvault id %q even though Azure shows both public access and Private Link", label, truth.ID),
+				"keyvault findings rendering or Azure-backed validation context",
+				"keyvault should emit the shipped hybrid exposure finding whenever Azure shows both public access and Private Link",
+			))
+		}
+		if !expectedHybrid && hybridFinding != nil {
+			findings = append(findings, makeBlockingFinding(
+				fmt.Sprintf("%s-%s-%s-unexpected-hybrid-finding", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint),
+				fmt.Sprintf("%s emitted a public-network-with-private-endpoint finding for keyvault id %q, but Azure does not currently show that hybrid posture", label, truth.ID),
+				"keyvault findings rendering or Azure-backed validation context",
+				"keyvault should not overclaim a hybrid public-plus-private posture when Azure does not show it",
+			))
+		}
+		if expectedPurge && purgeFinding == nil {
+			findings = append(findings, makeBlockingFinding(
+				fmt.Sprintf("%s-%s-%s-purge-finding-missing", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint),
+				fmt.Sprintf("%s omitted the shipped purge-protection-disabled finding for keyvault id %q even though Azure reports purge protection disabled", label, truth.ID),
+				"keyvault findings rendering or Azure-backed validation context",
+				"keyvault should emit the shipped purge-protection finding whenever Azure shows that destructive recovery protection is disabled",
+			))
+		}
+		if !expectedPurge && purgeFinding != nil {
+			findings = append(findings, makeBlockingFinding(
+				fmt.Sprintf("%s-%s-%s-unexpected-purge-finding", entry.SurfaceKind, entry.SurfaceName, entry.Viewpoint),
+				fmt.Sprintf("%s emitted a purge-protection-disabled finding for keyvault id %q, but Azure currently reports purge protection enabled", label, truth.ID),
+				"keyvault findings rendering or Azure-backed validation context",
+				"keyvault should not overclaim disabled purge protection when Azure reports it enabled",
+			))
+		}
+	}
+
+	return findings
 }
 
 func validateStoragePayloadAgainstAzureContext(entry CommandLogEntry, label string, payload map[string]any, context *liveStorageContextArtifact) []Finding {

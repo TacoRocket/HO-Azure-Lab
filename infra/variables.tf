@@ -83,3 +83,21 @@ variable "enable_azure_ml" {
   type        = bool
   default     = false
 }
+
+variable "enable_deployment_path_addin" {
+  description = "Enable the deployment-path add-in lane. This stays off by default so Automation execution proof can be added separately from the base lab apply."
+  type        = bool
+  default     = false
+}
+
+variable "enable_compute_control_addin" {
+  description = "Enable the compute-control add-in lane. This stays off by default so the cleaner single-identity compute proof can be added separately from the base lab apply."
+  type        = bool
+  default     = false
+}
+
+variable "enable_persistence_addin" {
+  description = "Enable the persistence add-in lane. This stays off by default so durable recurring execution proof can be added separately from the base lab apply."
+  type        = bool
+  default     = false
+}

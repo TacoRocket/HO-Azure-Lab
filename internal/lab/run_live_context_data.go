@@ -11,6 +11,7 @@ import (
 )
 
 const storageValidationAPIVersion = "2025-06-01"
+const keyVaultValidationAPIVersion = "2024-11-01"
 const snapshotsDisksValidationAPIVersion = "2023-04-02"
 
 type liveSnapshotsDisksContextArtifact struct {
@@ -43,6 +44,10 @@ type liveStorageContextArtifact struct {
 	StorageAssets []liveStorageTruth `json:"storage_assets"`
 }
 
+type liveKeyVaultContextArtifact struct {
+	KeyVaults []liveKeyVaultTruth `json:"key_vaults"`
+}
+
 type liveStorageTruth struct {
 	AllowSharedKeyAccess    *bool  `json:"allow_shared_key_access,omitempty"`
 	DNSEndpointType         string `json:"dns_endpoint_type,omitempty"`
@@ -59,6 +64,23 @@ type liveStorageTruth struct {
 	PublicAccess            bool   `json:"public_access"`
 	PublicNetworkAccess     string `json:"public_network_access,omitempty"`
 	ResourceGroup           string `json:"resource_group"`
+}
+
+type liveKeyVaultTruth struct {
+	AccessPolicyCount       int    `json:"access_policy_count"`
+	EnableRBACAuthorization bool   `json:"enable_rbac_authorization"`
+	ID                      string `json:"id"`
+	Location                string `json:"location,omitempty"`
+	Name                    string `json:"name"`
+	NetworkDefaultAction    string `json:"network_default_action,omitempty"`
+	PrivateEndpointEnabled  bool   `json:"private_endpoint_enabled"`
+	PublicNetworkAccess     string `json:"public_network_access,omitempty"`
+	PurgeProtectionEnabled  bool   `json:"purge_protection_enabled"`
+	ResourceGroup           string `json:"resource_group"`
+	SKUName                 string `json:"sku_name,omitempty"`
+	SoftDeleteEnabled       bool   `json:"soft_delete_enabled"`
+	TenantID                string `json:"tenant_id,omitempty"`
+	VaultURI                string `json:"vault_uri,omitempty"`
 }
 
 type azStorageAccountListResource struct {
@@ -86,6 +108,7 @@ type azStorageAccountProperties struct {
 	IsNFSV3Enabled             *bool                             `json:"isNfsV3Enabled"`
 	IsSFTPEnabled              *bool                             `json:"isSftpEnabled"`
 	MinimumTLSVersion          string                            `json:"minimumTlsVersion"`
+	NetworkACLs                azStorageNetworkRuleSet           `json:"networkAcls"`
 	NetworkRuleSet             azStorageNetworkRuleSet           `json:"networkRuleSet"`
 	PrivateEndpointConnections []azStoragePrivateEndpointConnRef `json:"privateEndpointConnections"`
 	PublicNetworkAccess        string                            `json:"publicNetworkAccess"`
@@ -98,6 +121,46 @@ type azStorageNetworkRuleSet struct {
 
 type azStoragePrivateEndpointConnRef struct {
 	ID string `json:"id"`
+}
+
+type azKeyVaultListResource struct {
+	ID            string `json:"id"`
+	Location      string `json:"location"`
+	Name          string `json:"name"`
+	ResourceGroup string `json:"resourceGroup"`
+}
+
+type azKeyVaultShowResource struct {
+	ID            string               `json:"id"`
+	Location      string               `json:"location"`
+	Name          string               `json:"name"`
+	Properties    azKeyVaultProperties `json:"properties"`
+	ResourceGroup string               `json:"resourceGroup"`
+	SKU           azKeyVaultSKU        `json:"sku"`
+}
+
+type azKeyVaultProperties struct {
+	AccessPolicies             []map[string]any                   `json:"accessPolicies"`
+	EnablePurgeProtection      bool                               `json:"enablePurgeProtection"`
+	EnableRBACAuthorization    bool                               `json:"enableRbacAuthorization"`
+	EnableSoftDelete           bool                               `json:"enableSoftDelete"`
+	NetworkACLs                azKeyVaultNetworkACLs              `json:"networkAcls"`
+	PrivateEndpointConnections []azKeyVaultPrivateEndpointConnRef `json:"privateEndpointConnections"`
+	PublicNetworkAccess        string                             `json:"publicNetworkAccess"`
+	TenantID                   string                             `json:"tenantId"`
+	VaultURI                   string                             `json:"vaultUri"`
+}
+
+type azKeyVaultNetworkACLs struct {
+	DefaultAction string `json:"defaultAction"`
+}
+
+type azKeyVaultPrivateEndpointConnRef struct {
+	ID string `json:"id"`
+}
+
+type azKeyVaultSKU struct {
+	Name string `json:"name"`
 }
 
 type azManagedDiskListResource struct {
@@ -208,7 +271,7 @@ func captureLiveStorageContext(outdir, workingDir string, env []string, progress
 			Location:                firstNonEmptyString(strings.TrimSpace(account.Location), strings.TrimSpace(listed.Location)),
 			MinimumTLSVersion:       strings.TrimSpace(account.Properties.MinimumTLSVersion),
 			Name:                    firstNonEmptyString(strings.TrimSpace(account.Name), strings.TrimSpace(listed.Name), resourceNameFromAzureID(accountID), "unknown"),
-			NetworkDefaultAction:    strings.TrimSpace(account.Properties.NetworkRuleSet.DefaultAction),
+			NetworkDefaultAction:    storageValidationDefaultAction(account.Properties),
 			NFSV3Enabled:            firstBoolPtr(account.Properties.IsNFSV3Enabled, account.Properties.EnableNFSV3),
 			PrivateEndpointEnabled:  len(account.Properties.PrivateEndpointConnections) > 0,
 			PublicAccess:            account.Properties.AllowBlobPublicAccess,
@@ -226,6 +289,78 @@ func captureLiveStorageContext(outdir, workingDir string, env []string, progress
 		return fmt.Errorf("write live storage context artifact: %w", err)
 	}
 	return nil
+}
+
+func captureLiveKeyVaultContext(outdir, workingDir string, env []string, progressWriter io.Writer) error {
+	listCmd := exec.Command("az", "resource", "list", "--resource-type", "Microsoft.KeyVault/vaults", "--output", "json")
+	listOutput, err := runProgressCommand("az resource list (keyvault validation context)", workingDir, env, progressWriter, listCmd)
+	if err != nil {
+		return fmt.Errorf("az resource list failed for key vaults: %s", strings.TrimSpace(string(listOutput)))
+	}
+	vaults := []azKeyVaultListResource{}
+	if err := json.Unmarshal(listOutput, &vaults); err != nil {
+		return fmt.Errorf("parse key vault list output: %w", err)
+	}
+
+	if len(vaults) == 0 {
+		artifact := liveKeyVaultContextArtifact{KeyVaults: []liveKeyVaultTruth{}}
+		if err := WriteJSON(filepath.Join(outdir, "live-keyvault-context.json"), artifact); err != nil {
+			return fmt.Errorf("write live keyvault context artifact: %w", err)
+		}
+		return nil
+	}
+
+	truths := make([]liveKeyVaultTruth, 0, len(vaults))
+	for _, listed := range vaults {
+		vaultID := strings.TrimSpace(listed.ID)
+		if vaultID == "" {
+			continue
+		}
+
+		showCmd := exec.Command("az", "resource", "show", "--ids", vaultID, "--api-version", keyVaultValidationAPIVersion, "--output", "json")
+		showOutput, err := runProgressCommand("az resource show (keyvault validation context)", workingDir, env, progressWriter, showCmd)
+		if err != nil {
+			return fmt.Errorf("az resource show failed for %s: %s", vaultID, strings.TrimSpace(string(showOutput)))
+		}
+		vault := azKeyVaultShowResource{}
+		if err := json.Unmarshal(showOutput, &vault); err != nil {
+			return fmt.Errorf("parse key vault show output for %s: %w", vaultID, err)
+		}
+
+		truths = append(truths, liveKeyVaultTruth{
+			AccessPolicyCount:       len(vault.Properties.AccessPolicies),
+			EnableRBACAuthorization: vault.Properties.EnableRBACAuthorization,
+			ID:                      vaultID,
+			Location:                firstNonEmptyString(strings.TrimSpace(vault.Location), strings.TrimSpace(listed.Location)),
+			Name:                    firstNonEmptyString(strings.TrimSpace(vault.Name), strings.TrimSpace(listed.Name), resourceNameFromAzureID(vaultID), "unknown"),
+			NetworkDefaultAction:    strings.TrimSpace(vault.Properties.NetworkACLs.DefaultAction),
+			PrivateEndpointEnabled:  len(vault.Properties.PrivateEndpointConnections) > 0,
+			PublicNetworkAccess:     strings.TrimSpace(vault.Properties.PublicNetworkAccess),
+			PurgeProtectionEnabled:  vault.Properties.EnablePurgeProtection,
+			ResourceGroup:           firstNonEmptyString(strings.TrimSpace(vault.ResourceGroup), strings.TrimSpace(listed.ResourceGroup), resourceGroupFromAzureID(vaultID)),
+			SKUName:                 strings.TrimSpace(vault.SKU.Name),
+			SoftDeleteEnabled:       vault.Properties.EnableSoftDelete,
+			TenantID:                strings.TrimSpace(vault.Properties.TenantID),
+			VaultURI:                strings.TrimSpace(vault.Properties.VaultURI),
+		})
+	}
+
+	sort.SliceStable(truths, func(i, j int) bool {
+		return truths[i].ID < truths[j].ID
+	})
+
+	artifact := liveKeyVaultContextArtifact{KeyVaults: truths}
+	if err := WriteJSON(filepath.Join(outdir, "live-keyvault-context.json"), artifact); err != nil {
+		return fmt.Errorf("write live keyvault context artifact: %w", err)
+	}
+	return nil
+}
+
+func storageValidationDefaultAction(properties azStorageAccountProperties) string {
+	return firstNonEmptyString(
+		strings.TrimSpace(properties.NetworkRuleSet.DefaultAction),
+		strings.TrimSpace(properties.NetworkACLs.DefaultAction),
+	)
 }
 
 func captureLiveSnapshotsDisksContext(outdir, workingDir string, env []string, progressWriter io.Writer) error {

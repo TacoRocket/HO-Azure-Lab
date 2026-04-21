@@ -18,10 +18,10 @@ var SupportedReasonCodes = []string{
 }
 
 var truthFirstBootstrapCoveredCommands = map[string]struct{}{
-	"acr": {}, "aks": {}, "api-mgmt": {}, "app-services": {}, "application-gateway": {},
-	"arm-deployments": {}, "auth-policies": {}, "automation": {}, "container-apps": {},
-	"container-instances": {}, "databases": {}, "dns": {}, "endpoints": {}, "env-vars": {},
-	"functions": {}, "inventory": {}, "keyvault": {}, "managed-identities": {},
+	"acr": {}, "aks": {}, "api-mgmt": {}, "app-credentials": {}, "app-services": {}, "application-gateway": {},
+	"arm-deployments": {}, "auth-policies": {}, "automation": {}, "azure-ml": {}, "container-apps": {},
+	"container-instances": {}, "cross-tenant": {}, "databases": {}, "dns": {}, "endpoints": {}, "env-vars": {},
+	"event-grid": {}, "functions": {}, "inventory": {}, "keyvault": {}, "logic-apps": {}, "managed-identities": {},
 	"network-effective": {}, "network-ports": {}, "nics": {}, "permissions": {},
 	"principals": {}, "privesc": {}, "rbac": {}, "resource-trusts": {}, "role-trusts": {},
 	"snapshots-disks": {}, "storage": {}, "tokens-credentials": {}, "vms": {}, "vmss": {},
@@ -34,14 +34,6 @@ type bootstrapManualSurface struct {
 }
 
 var truthFirstBootstrapManualCommands = map[string]bootstrapManualSurface{
-	"cross-tenant": {
-		ReasonDetail: "Cross-tenant validation needs a repeatable second-tenant setup path before this lab can gate it honestly.",
-		ManualSetupSteps: []string{
-			"Create or identify the second tenant and the identities used for the trust path.",
-			"Record the repeatable cross-tenant prerequisite steps in ho-azure-lab-reference before gating this command.",
-			"Wire the resulting proof inputs into the lab manifest and run artifacts.",
-		},
-	},
 	"devops": {
 		ReasonDetail: "The DevOps canary templates are tracked here, but the standing Azure DevOps org, project, repo, service connection, and variable group path is not wired yet in this lab.",
 		ManualSetupSteps: []string{
@@ -50,32 +42,22 @@ var truthFirstBootstrapManualCommands = map[string]bootstrapManualSurface{
 			"Record the repeatable setup path in ho-azure-lab-reference before moving devops into the gated run.",
 		},
 	},
-	"lighthouse": {
-		ReasonDetail: "Lighthouse validation still needs a repeatable delegated-resource setup path before this repo can gate it honestly.",
-		ManualSetupSteps: []string{
-			"Create or identify the managing and managed scopes used for the Lighthouse relationship.",
-			"Record the delegated setup path in ho-azure-lab-reference before gating this command.",
-			"Wire the resulting proof inputs into the lab manifest and run artifacts.",
-		},
-	},
 }
 
 var truthFirstBootstrapFollowupCommands = map[string]struct{}{
-	"app-credentials": {},
-	"azure-ml":        {},
-	"event-grid":      {},
-	"logic-apps":      {},
+	"lighthouse": {},
 }
 
 var truthFirstBootstrapCoveredFamilies = map[string]struct{}{
+	"automation":      {},
+	"compute-control": {},
 	"credential-path": {},
 	"deployment-path": {},
 	"escalation-path": {},
+	"logic-apps":      {},
 }
 
-var truthFirstBootstrapFollowupFamilies = map[string]struct{}{
-	"compute-control": {},
-}
+var truthFirstBootstrapFollowupFamilies = map[string]struct{}{}
 
 func buildSurfaceEntry(defaultStatus, reasonCode string) SurfaceEntry {
 	viewpoints := map[string]ViewpointStatus{}

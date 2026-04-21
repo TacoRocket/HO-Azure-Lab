@@ -31,6 +31,8 @@ locals {
   empty_app_name                 = "app-empty-mi-${substr(local.unique_suffix, 0, 6)}"
   function_app_name              = "func-orders-${substr(local.unique_suffix, 0, 6)}"
   logic_app_name                 = "la-inbound-${substr(local.unique_suffix, 0, 6)}"
+  persistence_logic_app_name     = "la-recurring-${substr(local.unique_suffix, 0, 6)}"
+  compute_control_app_name       = "app-uami-ctrl-${substr(local.unique_suffix, 0, 6)}"
   log_analytics_name             = "log-aca-${substr(local.sanitized_prefix, 0, 8)}-${substr(local.unique_suffix, 0, 6)}"
   container_app_env_name         = "cae-ops-${substr(local.unique_suffix, 0, 6)}"
   container_app_name             = "ca-public-${substr(local.unique_suffix, 0, 6)}"
@@ -53,6 +55,9 @@ locals {
   sql_admin_login                = "hoazureadmin"
   sql_admin_password             = "HoAzure!${substr(local.unique_suffix, 0, 4)}${substr(local.unique_suffix, 4, 4)}"
   automation_account_name        = "aa-ops-${substr(local.unique_suffix, 0, 6)}"
+  deployment_path_runbook_name   = "rb-deploy-proof"
+  deployment_path_schedule_name  = "sched-deploy-proof"
+  deployment_path_webhook_name   = "wh-deploy-proof"
   public_dns_zone_name           = "ho-${substr(local.unique_suffix, 0, 6)}.example.net"
   private_dns_zone_name          = "ho-${substr(local.unique_suffix, 0, 6)}.internal"
 

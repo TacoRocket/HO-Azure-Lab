@@ -13,7 +13,7 @@ import (
 var (
 	entryStartRe     = regexp.MustCompile(`^\s*"([^"]+)":\s*{\s*$`)
 	sectionRe        = regexp.MustCompile(`Section:\s*"([^"]+)"`)
-	groupedCommandRe = regexp.MustCompile(`GroupedCommand:\s*"([^"]+)"`)
+	groupedCommandRe = regexp.MustCompile(`(?:GroupedCommand|GroupCommand):\s*"([^"]+)"`)
 	topLevelFieldsRe = regexp.MustCompile(`(?s)TopLevelFields:\s*\[]string\s*{(.*?)}`)
 	quotedValueRe    = regexp.MustCompile(`"([^"]+)"`)
 )
@@ -106,6 +106,25 @@ func extractImplementedNames(filePath string) ([]string, error) {
 	return names, nil
 }
 
+func extractImplementedNamesFromFiles(filePaths ...string) ([]string, error) {
+	seen := map[string]struct{}{}
+	for _, filePath := range filePaths {
+		names, err := extractImplementedNames(filePath)
+		if err != nil {
+			return nil, err
+		}
+		for _, name := range names {
+			seen[name] = struct{}{}
+		}
+	}
+	names := make([]string, 0, len(seen))
+	for name := range seen {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
 func extractFamilyGroupCommands(filePath string) (map[string]string, error) {
 	blocks, err := extractBlocks(filePath)
 	if err != nil {
@@ -121,6 +140,23 @@ func extractFamilyGroupCommands(filePath string) (map[string]string, error) {
 			return nil, fmt.Errorf("family %q is missing GroupedCommand in %s", block.name, filePath)
 		}
 		families[block.name] = match[1]
+	}
+	return families, nil
+}
+
+func extractFamilyGroupCommandsFromFiles(filePaths ...string) (map[string]string, error) {
+	families := map[string]string{}
+	for _, filePath := range filePaths {
+		extracted, err := extractFamilyGroupCommands(filePath)
+		if err != nil {
+			return nil, err
+		}
+		for name, groupCommand := range extracted {
+			if existing, ok := families[name]; ok && existing != groupCommand {
+				return nil, fmt.Errorf("family %q has conflicting grouped commands %q and %q", name, existing, groupCommand)
+			}
+			families[name] = groupCommand
+		}
 	}
 	return families, nil
 }
@@ -156,16 +192,17 @@ func DeriveSurface(hoAzureDir string) (SurfaceSnapshot, error) {
 	}
 	commandsFile := filepath.Join(resolvedDir, "internal", "contracts", "commands.go")
 	familiesFile := filepath.Join(resolvedDir, "internal", "contracts", "families.go")
+	persistenceFile := filepath.Join(resolvedDir, "internal", "contracts", "persistence.go")
 
 	commands, err := extractFlatCommands(commandsFile)
 	if err != nil {
 		return SurfaceSnapshot{}, err
 	}
-	families, err := extractImplementedNames(familiesFile)
+	families, err := extractImplementedNamesFromFiles(familiesFile, persistenceFile)
 	if err != nil {
 		return SurfaceSnapshot{}, err
 	}
-	familyGroupCommands, err := extractFamilyGroupCommands(familiesFile)
+	familyGroupCommands, err := extractFamilyGroupCommandsFromFiles(familiesFile, persistenceFile)
 	if err != nil {
 		return SurfaceSnapshot{}, err
 	}

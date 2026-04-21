@@ -102,6 +102,158 @@ func loadLiveFunctionsContext(payloadPath string) (*liveFunctionsContextArtifact
 	return &artifact, nil
 }
 
+func loadLiveComputeControlContext(payloadPath string) (*liveComputeControlContextArtifact, error) {
+	contextPath := filepath.Join(filepath.Dir(payloadPath), "live-compute-control-context.json")
+	info, err := os.Stat(contextPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("live compute-control context path %q is a directory", contextPath)
+	}
+	artifact := liveComputeControlContextArtifact{}
+	if err := LoadJSON(contextPath, &artifact); err != nil {
+		return nil, err
+	}
+	return &artifact, nil
+}
+
+func loadLiveEnvVarsContext(payloadPath string) (*liveEnvVarsContextArtifact, error) {
+	contextPath := filepath.Join(filepath.Dir(payloadPath), "live-env-vars-context.json")
+	info, err := os.Stat(contextPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("live env-vars context path %q is a directory", contextPath)
+	}
+	artifact := liveEnvVarsContextArtifact{}
+	if err := LoadJSON(contextPath, &artifact); err != nil {
+		return nil, err
+	}
+	return &artifact, nil
+}
+
+func loadLiveTokensCredentialsContext(payloadPath string) (*liveTokensCredentialsContextArtifact, error) {
+	contextPath := filepath.Join(filepath.Dir(payloadPath), "live-tokens-credentials-context.json")
+	info, err := os.Stat(contextPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("live tokens-credentials context path %q is a directory", contextPath)
+	}
+	artifact := liveTokensCredentialsContextArtifact{}
+	if err := LoadJSON(contextPath, &artifact); err != nil {
+		return nil, err
+	}
+	return &artifact, nil
+}
+
+func loadLiveAppCredentialsContext(payloadPath string) (*liveAppCredentialsContextArtifact, error) {
+	contextPath := filepath.Join(filepath.Dir(payloadPath), "live-app-credentials-context.json")
+	info, err := os.Stat(contextPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("live app-credentials context path %q is a directory", contextPath)
+	}
+	artifact := liveAppCredentialsContextArtifact{}
+	if err := LoadJSON(contextPath, &artifact); err != nil {
+		return nil, err
+	}
+	return &artifact, nil
+}
+
+func loadLiveAuthPoliciesContext(payloadPath string) (*liveAuthPoliciesContextArtifact, error) {
+	contextPath := filepath.Join(filepath.Dir(payloadPath), "live-auth-policies-context.json")
+	info, err := os.Stat(contextPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("live auth-policies context path %q is a directory", contextPath)
+	}
+	artifact := liveAuthPoliciesContextArtifact{}
+	if err := LoadJSON(contextPath, &artifact); err != nil {
+		return nil, err
+	}
+	return &artifact, nil
+}
+
+func loadLiveCrossTenantContext(payloadPath string) (*liveCrossTenantContextArtifact, error) {
+	contextPath := filepath.Join(filepath.Dir(payloadPath), "live-cross-tenant-context.json")
+	info, err := os.Stat(contextPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("live cross-tenant context path %q is a directory", contextPath)
+	}
+	artifact := liveCrossTenantContextArtifact{}
+	if err := LoadJSON(contextPath, &artifact); err != nil {
+		return nil, err
+	}
+	return &artifact, nil
+}
+
+func loadLiveRoleTrustsContext(payloadPath string) (*liveRoleTrustsContextArtifact, error) {
+	contextPath := filepath.Join(filepath.Dir(payloadPath), "live-role-trusts-context.json")
+	info, err := os.Stat(contextPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("live role-trusts context path %q is a directory", contextPath)
+	}
+	artifact := liveRoleTrustsContextArtifact{}
+	if err := LoadJSON(contextPath, &artifact); err != nil {
+		return nil, err
+	}
+	return &artifact, nil
+}
+
+func loadLiveArmDeploymentsContext(payloadPath string) (*liveArmDeploymentsContextArtifact, error) {
+	contextPath := filepath.Join(filepath.Dir(payloadPath), "live-arm-deployments-context.json")
+	info, err := os.Stat(contextPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("live arm-deployments context path %q is a directory", contextPath)
+	}
+	artifact := liveArmDeploymentsContextArtifact{}
+	if err := LoadJSON(contextPath, &artifact); err != nil {
+		return nil, err
+	}
+	return &artifact, nil
+}
+
 func loadLiveDNSContext(payloadPath string) (*liveDNSContextArtifact, error) {
 	contextPath := filepath.Join(filepath.Dir(payloadPath), "live-dns-context.json")
 	info, err := os.Stat(contextPath)
@@ -172,6 +324,25 @@ func loadLiveContainerInstancesContext(payloadPath string) (*liveContainerInstan
 		return nil, fmt.Errorf("live container instances context path %q is a directory", contextPath)
 	}
 	artifact := liveContainerInstancesContextArtifact{}
+	if err := LoadJSON(contextPath, &artifact); err != nil {
+		return nil, err
+	}
+	return &artifact, nil
+}
+
+func loadLiveInventoryContext(payloadPath string) (*liveInventoryContextArtifact, error) {
+	contextPath := filepath.Join(filepath.Dir(payloadPath), "live-inventory-context.json")
+	info, err := os.Stat(contextPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("live inventory context path %q is a directory", contextPath)
+	}
+	artifact := liveInventoryContextArtifact{}
 	if err := LoadJSON(contextPath, &artifact); err != nil {
 		return nil, err
 	}
@@ -267,6 +438,25 @@ func loadLiveDatabasesContext(payloadPath string) (*liveDatabasesContextArtifact
 		return nil, fmt.Errorf("live databases context path %q is a directory", contextPath)
 	}
 	artifact := liveDatabasesContextArtifact{}
+	if err := LoadJSON(contextPath, &artifact); err != nil {
+		return nil, err
+	}
+	return &artifact, nil
+}
+
+func loadLiveKeyVaultContext(payloadPath string) (*liveKeyVaultContextArtifact, error) {
+	contextPath := filepath.Join(filepath.Dir(payloadPath), "live-keyvault-context.json")
+	info, err := os.Stat(contextPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("live keyvault context path %q is a directory", contextPath)
+	}
+	artifact := liveKeyVaultContextArtifact{}
 	if err := LoadJSON(contextPath, &artifact); err != nil {
 		return nil, err
 	}

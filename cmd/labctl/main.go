@@ -84,6 +84,9 @@ func runSetupAzureCommand(args []string) int {
 	costProfile := fs.String("cost-profile", "default", "Compute cost profile: default or lower-cost.")
 	aksVMSize := fs.String("aks-vm-size", "Standard_D2s_v3", "AKS VM size.")
 	enableAzureML := fs.Bool("enable-azure-ml", false, "Enable the separate Azure ML OpenTofu lane.")
+	enableDeploymentPathAddin := fs.Bool("enable-deployment-path-addin", false, "Enable the separate deployment-path proof add-in lane.")
+	enableComputeControlAddin := fs.Bool("enable-compute-control-addin", false, "Enable the separate compute-control proof add-in lane.")
+	enablePersistenceAddin := fs.Bool("enable-persistence-addin", false, "Enable the separate persistence proof add-in lane.")
 	enableHumanUserViewpoints := fs.Bool("enable-human-user-viewpoints", false, "Best-effort second-phase creation of lab human-user viewpoints.")
 	humanUserOutput := fs.String("human-user-output", "", "Optional output path for generated human-user viewpoint credentials.")
 	writeOnly := fs.Bool("write-only", false, "Only write the generated tfvars file and skip tofu init/apply.")
@@ -101,6 +104,9 @@ func runSetupAzureCommand(args []string) int {
 		EnableRoleTrustsCanary:        true,
 		EnableDeploymentHistoryCanary: true,
 		EnableAzureML:                 *enableAzureML,
+		EnableDeploymentPathAddin:     *enableDeploymentPathAddin,
+		EnableComputeControlAddin:     *enableComputeControlAddin,
+		EnablePersistenceAddin:        *enablePersistenceAddin,
 		EnableHumanUserViewpoints:     *enableHumanUserViewpoints,
 		HumanUserOutputPath:           *humanUserOutput,
 		WriteOnly:                     *writeOnly,

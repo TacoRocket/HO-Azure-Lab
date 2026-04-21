@@ -106,6 +106,22 @@ One deeper setup switch now stays intentionally separate:
   the default lab apply leaves AML off so AML-specific naming, provisioning, or timeout problems do
   not make the main OpenTofu deploy harder to troubleshoot
 
+There are also three optional proof add-ins that follow the same separate-lane pattern:
+
+- `--enable-deployment-path-addin`
+  turns on a small Azure Automation execution path for richer `chains deployment-path` proof
+- `--enable-compute-control-addin`
+  turns on a cleaner single-identity App Service proof workload for `compute-control`
+- `--enable-persistence-addin`
+  turns on a small recurrence-driven Logic App lane for later persistence-family proof
+
+Those stay off by default for the same reason as AML:
+
+- the base lab should still stand up cleanly without them
+- troubleshooting should stay isolated when one optional proof lane fails
+- operators who only want the base first-gate lab should not have to pay for every richer follow-up
+  story
+
 If you pass nothing, the default setup is:
 
 - `location = centralus`
@@ -143,6 +159,23 @@ That lane is separated on purpose:
 - AML troubleshooting stays isolated when the workspace or dependent resource names drift
 - maintainers can rerun or debug AML without turning the main lab apply into one larger failure
 
+The optional proof add-ins follow that same setup model:
+
+```bash
+labctl setup-azure-environment --enable-deployment-path-addin
+labctl setup-azure-environment --enable-compute-control-addin
+labctl setup-azure-environment --enable-persistence-addin
+```
+
+Those lanes are meant to enrich later grouped-family proof, not to redefine the base lab:
+
+- deployment-path add-in:
+  a lightweight Automation runbook, schedule, and webhook path
+- compute-control add-in:
+  a cleaner user-assigned-identity App Service workload
+- persistence add-in:
+  a recurrence-driven Logic App proof surface
+
 ## Current Bootstrap State
 
 The repo now has the first validation scaffold:
@@ -169,12 +202,14 @@ phase buckets.
 
 In plain language, that manifest now does three different things on purpose:
 
-- marks 34 shared AzureFox-era commands plus 3 grouped families as the first covered gate
-- marks manual-setup seams such as `devops`, `lighthouse`, and `cross-tenant` as explicit setup
-  exceptions with recorded steps
-- marks 4 newer `HO-Azure` follow-up commands and 1 follow-up family such as `app-credentials`, `azure-ml`,
-  `event-grid`, `logic-apps`, and `compute-control` as tracked follow-up
-  instead of pretending they are already live-gated here
+- marks 34 shared AzureFox-era commands plus newer validated lab surfaces such as
+  `app-credentials`, `cross-tenant`, `azure-ml`, `event-grid`, and `logic-apps`, for 39 covered
+  commands total, along with 6 grouped families as the first covered gate
+- marks `devops` as an explicit optional manual-setup add-on with recorded steps
+- keeps `lighthouse` as a tracked first-gate follow-up instead of pretending it is already
+  live-gated here
+- keeps richer proof add-ins such as deployment-path, compute-control, and persistence explicit
+  setup choices instead of silently expanding the base lab
 
 ## Intended Azure Lab Shape
 
@@ -299,6 +334,20 @@ Planned lab shape:
     troubleshoot
 - One Azure SQL server with one user database
 - One Azure Automation account with a system-assigned identity
+- One optional deployment-path add-in with:
+  one Automation runbook
+  one schedule
+  one webhook
+  - why this is not on by default:
+    it is meant to enrich grouped-family proof, not to make the base lab harder to stand up
+- One optional compute-control add-in with:
+  one extra user-assigned-identity App Service workload
+  - why this is not on by default:
+    it is a cleaner follow-up proof surface for grouped-family work, not a required first-run base
+- One optional persistence add-in with:
+  one recurrence-driven Logic App workflow
+  - why this is not on by default:
+    it is a later persistence proof lane and should stay isolated from the base apply until needed
 - One public DNS zone plus one private DNS zone with a registration-enabled VNet link
 - Three deployment-history objects:
   one succeeded subscription deployment with linked template URI
@@ -313,20 +362,21 @@ Planned lab shape:
     this takes extra manual setup and teardown outside the normal Azure apply flow, so it is
     treated as an intentional add-on instead of a required first-run step; if you do not turn it
     on, thinner or empty `devops` results are expected and that is not a gap in the base lab
-- One cross-tenant relationship
-  - manual setup note:
-    this needs a second Entra tenant plus the right trust relationship back to the main lab tenant
-    if you want the full `cross-tenant` command output
-  - why this is not on by default:
-    this depends on a second tenant and extra setup work that a casual lab user is not expected to
-    build just to get started, so it stays an intentional add-on
-- One Lighthouse delegated relationship
-  - manual setup note:
-    this needs a second Entra tenant plus the right delegated relationship back to the main lab
-    tenant if you want the full `lighthouse` command output
-  - why this is not on by default:
-    this also depends on a second-tenant relationship and extra manual setup, so it stays an
-    intentional add-on instead of a normal first-run requirement
+- One tenant-boundary evidence surface for `cross-tenant`
+  - what is present by default:
+    authorization-policy cues plus readable external service principals that are already visible
+    from the main lab tenant
+  - what this does not try to create:
+    a second-tenant delegated trust path or a full external-tenant lab environment
+  - why this is enough for the first gate:
+    the shipped `cross-tenant` command already preserves these tenant-boundary signals without
+    needing the lab to own a second tenant
+- Future Lighthouse delegated relationship
+  - current status:
+    this is still a follow-up lab surface, not part of the current first gate
+  - why it is deferred:
+    it still needs the delegated-scope lab shape and the matching validator proof path before this
+    repo can claim it as a normal tested surface
 
 Operator guidance should stay simple:
 

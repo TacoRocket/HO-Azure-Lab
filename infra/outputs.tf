@@ -242,9 +242,37 @@ output "azure_ml" {
   description = "Azure ML lane status and resource names when that optional lane is enabled."
   value = {
     enabled              = var.enable_azure_ml
-    workspace_name       = var.enable_azure_ml ? azurerm_machine_learning_workspace.main[0].name : null
-    compute_cluster_name = var.enable_azure_ml ? azurerm_machine_learning_compute_cluster.cpu[0].name : null
-    datastore_name       = var.enable_azure_ml ? azurerm_machine_learning_datastore_blobstorage.lab_proof[0].name : null
+    workspace_name       = try(azurerm_machine_learning_workspace.main[0].name, null)
+    compute_cluster_name = try(azurerm_machine_learning_compute_cluster.cpu[0].name, null)
+    datastore_name       = try(azurerm_machine_learning_datastore_blobstorage.lab_proof[0].name, null)
+  }
+}
+
+output "deployment_path_addin" {
+  description = "Deployment-path add-in status and resource names when that optional lane is enabled."
+  value = {
+    enabled       = var.enable_deployment_path_addin
+    runbook_name  = try(azurerm_automation_runbook.deployment_path[0].name, null)
+    schedule_name = try(azurerm_automation_schedule.deployment_path[0].name, null)
+    webhook_name  = try(azurerm_automation_webhook.deployment_path[0].name, null)
+  }
+}
+
+output "compute_control_addin" {
+  description = "Compute-control add-in status and resource names when that optional lane is enabled."
+  value = {
+    enabled  = var.enable_compute_control_addin
+    app_name = try(azurerm_linux_web_app.compute_control[0].name, null)
+  }
+}
+
+output "persistence_addin" {
+  description = "Persistence add-in status and resource names when that optional lane is enabled."
+  value = {
+    enabled         = var.enable_persistence_addin
+    logic_app_name  = try(azurerm_logic_app_workflow.persistence[0].name, null)
+    trigger_name    = try(azurerm_logic_app_trigger_recurrence.persistence[0].name, null)
+    action_name     = try(azurerm_logic_app_action_http.persistence[0].name, null)
   }
 }
 

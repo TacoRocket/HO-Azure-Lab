@@ -596,6 +596,35 @@ resource "azurerm_linux_web_app" "empty" {
   app_settings = {}
 }
 
+resource "azurerm_linux_web_app" "compute_control" {
+  count                         = var.enable_compute_control_addin ? 1 : 0
+  name                          = local.compute_control_app_name
+  resource_group_name           = azurerm_resource_group.workload.name
+  location                      = azurerm_resource_group.workload.location
+  service_plan_id               = azurerm_service_plan.linux.id
+  public_network_access_enabled = true
+  client_certificate_enabled    = false
+  https_only                    = true
+  tags                          = local.tags
+
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.ua_app.id]
+  }
+
+  site_config {
+    always_on           = false
+    ftps_state          = "Disabled"
+    minimum_tls_version = "1.2"
+
+    application_stack {
+      python_version = "3.11"
+    }
+  }
+
+  app_settings = {}
+}
+
 resource "azurerm_linux_function_app" "orders" {
   name                            = local.function_app_name
   resource_group_name             = azurerm_resource_group.workload.name
@@ -663,6 +692,40 @@ resource "azurerm_logic_app_action_http" "inbound" {
   uri          = "https://example.org/logic-app-proof"
   body = jsonencode({
     source = "ho-azure-lab"
+  })
+}
+
+resource "azurerm_logic_app_workflow" "persistence" {
+  count               = var.enable_persistence_addin ? 1 : 0
+  name                = local.persistence_logic_app_name
+  location            = azurerm_resource_group.workload.location
+  resource_group_name = azurerm_resource_group.workload.name
+  enabled             = true
+  tags                = local.tags
+
+  identity {
+    type = "SystemAssigned"
+  }
+}
+
+resource "azurerm_logic_app_trigger_recurrence" "persistence" {
+  count        = var.enable_persistence_addin ? 1 : 0
+  name         = "daily"
+  logic_app_id = azurerm_logic_app_workflow.persistence[0].id
+  frequency    = "Day"
+  interval     = 1
+  time_zone    = "UTC"
+  start_time   = "2030-01-01T00:00:00Z"
+}
+
+resource "azurerm_logic_app_action_http" "persistence" {
+  count        = var.enable_persistence_addin ? 1 : 0
+  name         = "notify"
+  logic_app_id = azurerm_logic_app_workflow.persistence[0].id
+  method       = "POST"
+  uri          = "https://example.org/persistence-proof"
+  body = jsonencode({
+    source = "ho-azure-lab-persistence"
   })
 }
 
@@ -1020,6 +1083,52 @@ resource "azurerm_automation_account" "main" {
   identity {
     type = "SystemAssigned"
   }
+}
+
+resource "azurerm_automation_runbook" "deployment_path" {
+  count                   = var.enable_deployment_path_addin ? 1 : 0
+  name                    = local.deployment_path_runbook_name
+  location                = azurerm_resource_group.ops.location
+  resource_group_name     = azurerm_resource_group.ops.name
+  automation_account_name = azurerm_automation_account.main.name
+  runbook_type            = "PowerShell"
+  log_verbose             = true
+  log_progress            = true
+  description             = "Optional deployment-path proof add-in runbook."
+  content = <<-EOT
+    Write-Output "HO-Azure-Lab deployment-path proof runbook"
+  EOT
+  tags = local.tags
+}
+
+resource "azurerm_automation_schedule" "deployment_path" {
+  count                   = var.enable_deployment_path_addin ? 1 : 0
+  name                    = local.deployment_path_schedule_name
+  resource_group_name     = azurerm_resource_group.ops.name
+  automation_account_name = azurerm_automation_account.main.name
+  frequency               = "Day"
+  interval                = 1
+  timezone                = "UTC"
+  start_time              = "2030-01-01T00:00:00Z"
+  description             = "Optional deployment-path proof add-in schedule."
+}
+
+resource "azurerm_automation_job_schedule" "deployment_path" {
+  count                   = var.enable_deployment_path_addin ? 1 : 0
+  resource_group_name     = azurerm_resource_group.ops.name
+  automation_account_name = azurerm_automation_account.main.name
+  schedule_name           = azurerm_automation_schedule.deployment_path[0].name
+  runbook_name            = azurerm_automation_runbook.deployment_path[0].name
+}
+
+resource "azurerm_automation_webhook" "deployment_path" {
+  count                   = var.enable_deployment_path_addin ? 1 : 0
+  name                    = local.deployment_path_webhook_name
+  resource_group_name     = azurerm_resource_group.ops.name
+  automation_account_name = azurerm_automation_account.main.name
+  runbook_name            = azurerm_automation_runbook.deployment_path[0].name
+  expiry_time             = "2035-01-01T00:00:00Z"
+  enabled                 = true
 }
 
 resource "azurerm_dns_zone" "public" {
