@@ -1,0 +1,13 @@
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+- task: AzureWebApp@1
+  displayName: "Named target canary"
+  inputs:
+    azureSubscription: __SERVICE_CONNECTION__
+    appName: __NAMED_WEBAPP__
+    package: $(Build.SourcesDirectory)/README.md

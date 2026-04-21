@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harriersecurity.com/schemas/ho-azure-lab/validation-manifest.schema.json",
+  "title": "HO-Azure Lab Validation Manifest",
+  "description": "Lab-owned manifest describing shipped surface coverage, viewpoint coverage, and completion-verifier expectations.",
+  "type": "object",
+  "required": [
+    "manifest_version",
+    "tool",
+    "viewpoints",
+    "surfaces",
+    "completion"
+  ],
+  "properties": {
+    "manifest_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "tool": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "const": "HO-Azure"
+        },
+        "repo_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "surface_source": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "viewpoints": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/viewpoint_definition"
+      }
+    },
+    "surfaces": {
+      "type": "object",
+      "required": [
+        "commands",
+        "families"
+      ],
+      "properties": {
+        "commands": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/surface_entry"
+          }
+        },
+        "families": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/surface_entry"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "completion": {
+      "type": "object",
+      "required": [
+        "required_artifacts",
+        "required_review_topics",
+        "require_final_outcome",
+        "require_findings",
+        "require_teardown_record"
+      ],
+      "properties": {
+        "require_final_outcome": {
+          "type": "boolean"
+        },
+        "require_findings": {
+          "type": "boolean"
+        },
+        "require_teardown_record": {
+          "type": "boolean"
+        },
+        "required_artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/required_artifact"
+          }
+        },
+        "required_review_topics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/review_topic"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "viewpoint_definition": {
+      "type": "object",
+      "required": [
+        "required"
+      ],
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "surface_status": {
+      "type": "string",
+      "enum": [
+        "covered",
+        "excepted",
+        "unsupported"
+      ]
+    },
+    "reason_code": {
+      "type": "string",
+      "enum": [
+        "manual_setup_not_done",
+        "api_gap",
+        "cost_not_justified",
+        "bootstrap_pending",
+        "first_gate_followup",
+        "unsupported_surface",
+        "explicit_exception"
+      ]
+    },
+    "surface_entry": {
+      "type": "object",
+      "required": [
+        "status",
+        "viewpoints"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/surface_status"
+        },
+        "reason_code": {
+          "$ref": "#/$defs/reason_code"
+        },
+        "reason_detail": {
+          "type": "string"
+        },
+        "manual_setup_steps": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "viewpoints": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "$ref": "#/$defs/viewpoint_surface_entry"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "viewpoint_surface_entry": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/surface_status"
+        },
+        "reason_code": {
+          "$ref": "#/$defs/reason_code"
+        },
+        "reason_detail": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "required_artifact": {
+      "type": "object",
+      "required": [
+        "id",
+        "path",
+        "kind",
+        "required_when"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "proof",
+            "log",
+            "timeline",
+            "timing",
+            "demo"
+          ]
+        },
+        "required_when": {
+          "type": "string",
+          "enum": [
+            "always",
+            "demo_capture_expected"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "review_topic": {
+      "type": "object",
+      "required": [
+        "id",
+        "prompt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harriersecurity.com/schemas/ho-azure-lab/validation-surface.schema.json",
+  "title": "HO-Azure Lab Validation Surface",
+  "description": "Derived shipped HO-Azure flat-command and grouped-family surface snapshot.",
+  "type": "object",
+  "required": [
+    "generated_at",
+    "tool_repo_path",
+    "commands",
+    "families"
+  ],
+  "properties": {
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "tool_repo_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "families": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    }
+  },
+  "additionalProperties": false
+}

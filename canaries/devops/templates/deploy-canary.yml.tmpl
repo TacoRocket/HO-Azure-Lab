@@ -1,0 +1,16 @@
+jobs:
+- job: TemplateFollow
+  displayName: "Template follow canary"
+  variables:
+  - group: __VARIABLE_GROUP__
+  pool:
+    vmImage: ubuntu-latest
+  steps:
+  - task: AzureCLI@2
+    displayName: "Read template-follow resource group"
+    inputs:
+      azureSubscription: __SERVICE_CONNECTION__
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        az group show --name __WORKLOAD_RESOURCE_GROUP__ --query name -o tsv || true

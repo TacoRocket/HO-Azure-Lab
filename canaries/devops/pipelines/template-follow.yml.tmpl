@@ -1,0 +1,8 @@
+trigger: none
+pr: none
+
+stages:
+- stage: TemplateFollow
+  displayName: "Template follow canary"
+  jobs:
+  - template: /templates/deploy-canary.yml

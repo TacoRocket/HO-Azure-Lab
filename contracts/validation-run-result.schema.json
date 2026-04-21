@@ -1,0 +1,256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harriersecurity.com/schemas/ho-azure-lab/validation-run-result.schema.json",
+  "title": "HO-Azure Lab Validation Run Result",
+  "description": "Completion-verifier input describing one lab validation run.",
+  "type": "object",
+  "required": [
+    "run_id",
+    "started_at",
+    "finished_at",
+    "demo_capture_expected",
+    "scope",
+    "surface_results",
+    "artifacts",
+    "final_outcome",
+    "findings",
+    "teardown"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finished_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "demo_capture_expected": {
+      "type": "boolean"
+    },
+    "scope": {
+      "$ref": "#/$defs/run_scope"
+    },
+    "surface_results": {
+      "type": "object",
+      "required": [
+        "commands",
+        "families"
+      ],
+      "properties": {
+        "commands": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/viewpoint_results"
+          }
+        },
+        "families": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/viewpoint_results"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/artifact_record"
+      }
+    },
+    "final_outcome": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "pass_with_explicit_exceptions",
+        "fix-now",
+        "blocked"
+      ]
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "teardown": {
+      "$ref": "#/$defs/teardown_record"
+    }
+  },
+  "$defs": {
+    "viewpoint_results": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/result_record"
+      }
+    },
+    "run_scope": {
+      "type": "object",
+      "required": [
+        "required_viewpoints",
+        "commands",
+        "families"
+      ],
+      "properties": {
+        "required_viewpoints": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "commands": {
+          "$ref": "#/$defs/surface_scope"
+        },
+        "families": {
+          "$ref": "#/$defs/surface_scope"
+        }
+      },
+      "additionalProperties": false
+    },
+    "surface_scope": {
+      "type": "object",
+      "required": [
+        "covered",
+        "excepted_by_reason",
+        "unsupported_by_reason"
+      ],
+      "properties": {
+        "covered": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "excepted_by_reason": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "unsupported_by_reason": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "result_record": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "blocked",
+            "excepted",
+            "unsupported"
+          ]
+        },
+        "notes": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "artifact_record": {
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "finding": {
+      "type": "object",
+      "required": [
+        "id",
+        "owner",
+        "severity",
+        "summary"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner": {
+          "type": "string",
+          "enum": [
+            "lab_repo",
+            "tool_repo"
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "note",
+            "watch",
+            "fix_soon",
+            "blocking",
+            "breaking"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "why_blocking": {
+          "type": "string"
+        },
+        "likely_seam": {
+          "type": "string"
+        },
+        "expected_outcome": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "teardown_record": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "verified",
+            "standing-resource-recorded"
+          ]
+        },
+        "notes": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

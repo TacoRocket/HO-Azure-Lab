@@ -1,0 +1,18 @@
+trigger: none
+pr: none
+
+variables:
+- group: __VARIABLE_GROUP__
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+- task: AzureCLI@2
+  displayName: "Read proof resource group"
+  inputs:
+    azureSubscription: __SERVICE_CONNECTION__
+    scriptType: bash
+    scriptLocation: inlineScript
+    inlineScript: |
+      az group show --name __OPS_RESOURCE_GROUP__ --query name -o tsv || true

@@ -1,0 +1,776 @@
+{
+  "manifest_version": 1,
+  "tool": {
+    "name": "HO-Azure",
+    "repo_path": "/Users/cfarley/Documents/HarrierOps/Azure/HO-Azure",
+    "surface_source": "internal/contracts"
+  },
+  "viewpoints": {
+    "admin": {
+      "required": true,
+      "description": "Administrative viewpoint"
+    },
+    "dev": {
+      "required": true,
+      "description": "Developer viewpoint"
+    },
+    "lower-privilege": {
+      "required": true,
+      "description": "Lower-privilege viewpoint"
+    }
+  },
+  "surfaces": {
+    "commands": {
+      "acr": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "aks": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "api-mgmt": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "app-credentials": {
+        "status": "excepted",
+        "reason_code": "first_gate_followup",
+        "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab.",
+        "viewpoints": {
+          "admin": {
+            "status": "excepted",
+            "reason_code": "first_gate_followup",
+            "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+          },
+          "dev": {
+            "status": "excepted",
+            "reason_code": "first_gate_followup",
+            "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+          },
+          "lower-privilege": {
+            "status": "excepted",
+            "reason_code": "first_gate_followup",
+            "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+          }
+        }
+      },
+      "app-services": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "application-gateway": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "arm-deployments": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "auth-policies": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "automation": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "azure-ml": {
+        "status": "excepted",
+        "reason_code": "first_gate_followup",
+        "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab.",
+        "viewpoints": {
+          "admin": {
+            "status": "excepted",
+            "reason_code": "first_gate_followup",
+            "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+          },
+          "dev": {
+            "status": "excepted",
+            "reason_code": "first_gate_followup",
+            "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+          },
+          "lower-privilege": {
+            "status": "excepted",
+            "reason_code": "first_gate_followup",
+            "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+          }
+        }
+      },
+      "container-apps": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "container-instances": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "cross-tenant": {
+        "status": "excepted",
+        "reason_code": "manual_setup_not_done",
+        "reason_detail": "Cross-tenant validation needs a repeatable second-tenant setup path before this lab can gate it honestly.",
+        "manual_setup_steps": [
+          "Create or identify the second tenant and the identities used for the trust path.",
+          "Record the repeatable cross-tenant prerequisite steps in ho-azure-lab-reference before gating this command.",
+          "Wire the resulting proof inputs into the lab manifest and run artifacts."
+        ],
+        "viewpoints": {
+          "admin": {
+            "status": "excepted",
+            "reason_code": "manual_setup_not_done",
+            "reason_detail": "Cross-tenant validation needs a repeatable second-tenant setup path before this lab can gate it honestly."
+          },
+          "dev": {
+            "status": "excepted",
+            "reason_code": "manual_setup_not_done",
+            "reason_detail": "Cross-tenant validation needs a repeatable second-tenant setup path before this lab can gate it honestly."
+          },
+          "lower-privilege": {
+            "status": "excepted",
+            "reason_code": "manual_setup_not_done",
+            "reason_detail": "Cross-tenant validation needs a repeatable second-tenant setup path before this lab can gate it honestly."
+          }
+        }
+      },
+      "databases": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "devops": {
+        "status": "excepted",
+        "reason_code": "manual_setup_not_done",
+        "reason_detail": "The DevOps canary templates are tracked here, but the standing Azure DevOps org, project, repo, service connection, and variable group path is not wired yet in this lab.",
+        "manual_setup_steps": [
+          "Create or identify the Azure DevOps org, project, and repo for the standing canary lane.",
+          "Create the service connection and variable group the canary templates expect.",
+          "Record the repeatable setup path in ho-azure-lab-reference before moving devops into the gated run."
+        ],
+        "viewpoints": {
+          "admin": {
+            "status": "excepted",
+            "reason_code": "manual_setup_not_done",
+            "reason_detail": "The DevOps canary templates are tracked here, but the standing Azure DevOps org, project, repo, service connection, and variable group path is not wired yet in this lab."
+          },
+          "dev": {
+            "status": "excepted",
+            "reason_code": "manual_setup_not_done",
+            "reason_detail": "The DevOps canary templates are tracked here, but the standing Azure DevOps org, project, repo, service connection, and variable group path is not wired yet in this lab."
+          },
+          "lower-privilege": {
+            "status": "excepted",
+            "reason_code": "manual_setup_not_done",
+            "reason_detail": "The DevOps canary templates are tracked here, but the standing Azure DevOps org, project, repo, service connection, and variable group path is not wired yet in this lab."
+          }
+        }
+      },
+      "dns": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "endpoints": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "env-vars": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "event-grid": {
+        "status": "excepted",
+        "reason_code": "first_gate_followup",
+        "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab.",
+        "viewpoints": {
+          "admin": {
+            "status": "excepted",
+            "reason_code": "first_gate_followup",
+            "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+          },
+          "dev": {
+            "status": "excepted",
+            "reason_code": "first_gate_followup",
+            "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+          },
+          "lower-privilege": {
+            "status": "excepted",
+            "reason_code": "first_gate_followup",
+            "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+          }
+        }
+      },
+      "functions": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "inventory": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "keyvault": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "lighthouse": {
+        "status": "excepted",
+        "reason_code": "manual_setup_not_done",
+        "reason_detail": "Lighthouse validation still needs a repeatable delegated-resource setup path before this repo can gate it honestly.",
+        "manual_setup_steps": [
+          "Create or identify the managing and managed scopes used for the Lighthouse relationship.",
+          "Record the delegated setup path in ho-azure-lab-reference before gating this command.",
+          "Wire the resulting proof inputs into the lab manifest and run artifacts."
+        ],
+        "viewpoints": {
+          "admin": {
+            "status": "excepted",
+            "reason_code": "manual_setup_not_done",
+            "reason_detail": "Lighthouse validation still needs a repeatable delegated-resource setup path before this repo can gate it honestly."
+          },
+          "dev": {
+            "status": "excepted",
+            "reason_code": "manual_setup_not_done",
+            "reason_detail": "Lighthouse validation still needs a repeatable delegated-resource setup path before this repo can gate it honestly."
+          },
+          "lower-privilege": {
+            "status": "excepted",
+            "reason_code": "manual_setup_not_done",
+            "reason_detail": "Lighthouse validation still needs a repeatable delegated-resource setup path before this repo can gate it honestly."
+          }
+        }
+      },
+      "logic-apps": {
+        "status": "excepted",
+        "reason_code": "first_gate_followup",
+        "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab.",
+        "viewpoints": {
+          "admin": {
+            "status": "excepted",
+            "reason_code": "first_gate_followup",
+            "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+          },
+          "dev": {
+            "status": "excepted",
+            "reason_code": "first_gate_followup",
+            "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+          },
+          "lower-privilege": {
+            "status": "excepted",
+            "reason_code": "first_gate_followup",
+            "reason_detail": "This shipped surface is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+          }
+        }
+      },
+      "managed-identities": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "network-effective": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "network-ports": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "nics": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "permissions": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "principals": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "privesc": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "rbac": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "resource-trusts": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "role-trusts": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "snapshots-disks": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "storage": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "tokens-credentials": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "vms": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "vmss": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "whoami": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "workloads": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      }
+    },
+    "families": {
+      "compute-control": {
+        "status": "excepted",
+        "reason_code": "first_gate_followup",
+        "reason_detail": "This grouped family is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab.",
+        "viewpoints": {
+          "admin": {
+            "status": "excepted",
+            "reason_code": "first_gate_followup",
+            "reason_detail": "This grouped family is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+          },
+          "dev": {
+            "status": "excepted",
+            "reason_code": "first_gate_followup",
+            "reason_detail": "This grouped family is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+          },
+          "lower-privilege": {
+            "status": "excepted",
+            "reason_code": "first_gate_followup",
+            "reason_detail": "This grouped family is tracked from day one, but it is not yet admitted into the cohesive first gate for the new lab."
+          }
+        }
+      },
+      "credential-path": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "deployment-path": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "escalation-path": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      }
+    }
+  },
+  "completion": {
+    "require_final_outcome": true,
+    "require_findings": true,
+    "require_teardown_record": true,
+    "required_artifacts": [
+      {
+        "id": "command_log",
+        "path": "artifacts/command-log.json",
+        "kind": "log",
+        "required_when": "always"
+      },
+      {
+        "id": "command_timeline",
+        "path": "artifacts/command-timeline.json",
+        "kind": "timeline",
+        "required_when": "always"
+      },
+      {
+        "id": "demo_capture_index",
+        "path": "artifacts/demo/index.json",
+        "kind": "demo",
+        "required_when": "demo_capture_expected"
+      }
+    ],
+    "required_review_topics": [
+      {
+        "id": "truthfulness_review",
+        "prompt": "Review truthfulness, omissions, and weaker bounded rows."
+      },
+      {
+        "id": "compatibility_review",
+        "prompt": "Review compatibility contracts, negative paths, and benchmark drift."
+      },
+      {
+        "id": "cleanup_packaging_review",
+        "prompt": "Review cleanup-readiness, packaging-readiness, and AI-smell findings."
+      }
+    ]
+  }
+}

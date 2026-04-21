@@ -1,0 +1,21 @@
+location       = "centralus"
+name_prefix    = "hoazurelab"
+ssh_public_key = "ssh-rsa AAAA..."
+
+# Default first-run path:
+# - smoother known-working compute path
+# - more expensive
+compute_profile = "default"
+
+# Lower-cost path after quota approval:
+# compute_profile = "lower-cost"
+
+# Keep AKS explicit so the cheaper VM and VMSS path does not silently change it.
+aks_vm_size = "Standard_D2s_v3"
+
+# Optional Azure ML lane:
+# enable_azure_ml = true
+
+# Optional targeted overrides:
+# vm_size_override  = "Standard_D2s_v3"
+# vmss_sku_override = "Standard_D2s_v3"
