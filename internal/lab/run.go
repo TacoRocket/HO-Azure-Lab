@@ -34,6 +34,42 @@ func azureViewpointConfigRoot() string {
 	return os.TempDir()
 }
 
+func envWithOverrides(overrides ...string) []string {
+	replacements := map[string]string{}
+	for _, override := range overrides {
+		key, _, ok := strings.Cut(override, "=")
+		if !ok {
+			continue
+		}
+		replacements[key] = override
+	}
+
+	env := make([]string, 0, len(os.Environ())+len(replacements))
+	for _, entry := range os.Environ() {
+		key, _, ok := strings.Cut(entry, "=")
+		if !ok {
+			env = append(env, entry)
+			continue
+		}
+		if _, replace := replacements[key]; replace {
+			continue
+		}
+		env = append(env, entry)
+	}
+	for _, override := range overrides {
+		key, _, ok := strings.Cut(override, "=")
+		if !ok {
+			env = append(env, override)
+			continue
+		}
+		if replacement, replace := replacements[key]; replace && replacement == override {
+			env = append(env, override)
+			delete(replacements, key)
+		}
+	}
+	return env
+}
+
 func buildSurfaceResults(entries map[string]SurfaceEntry) map[string]map[string]ViewpointResult {
 	results := map[string]map[string]ViewpointResult{}
 	for surfaceName, entry := range entries {
@@ -173,7 +209,14 @@ func BuildSurfacePlan(manifest Manifest, derived SurfaceSnapshot, viewpoints []s
 		if entry.Status != "covered" {
 			continue
 		}
-		groupCommand := derived.FamilyGroupCommands[surfaceName]
+		groupCommand := entry.GroupCommand
+		if groupCommand == "" {
+			groupCommand = derived.FamilyGroupCommands[surfaceName]
+		}
+		subcommand := entry.Subcommand
+		if subcommand == "" {
+			subcommand = surfaceName
+		}
 		for _, viewpoint := range viewpoints {
 			if entry.Viewpoints[viewpoint].Status != "covered" {
 				continue
@@ -183,11 +226,221 @@ func BuildSurfacePlan(manifest Manifest, derived SurfaceSnapshot, viewpoints []s
 				SurfaceName:  surfaceName,
 				Viewpoint:    viewpoint,
 				GroupCommand: groupCommand,
-				Subcommand:   surfaceName,
+				Subcommand:   subcommand,
 			})
 		}
 	}
 	return tasks
+}
+
+func normalizeRunProfileSelectors(selectors []string) []string {
+	seen := map[string]struct{}{}
+	normalized := []string{}
+	for _, selector := range selectors {
+		for _, part := range strings.Split(selector, ",") {
+			name := strings.TrimSpace(part)
+			if name == "" {
+				continue
+			}
+			if _, ok := seen[name]; ok {
+				continue
+			}
+			seen[name] = struct{}{}
+			normalized = append(normalized, name)
+		}
+	}
+	sort.Strings(normalized)
+	return normalized
+}
+
+func LoadRunProfileDefinition(path string) (RunProfileDefinition, error) {
+	definition := RunProfileDefinition{}
+	if strings.TrimSpace(path) == "" {
+		return definition, nil
+	}
+	if err := LoadJSON(path, &definition); err != nil {
+		return RunProfileDefinition{}, err
+	}
+	return definition, nil
+}
+
+func validateRunProfileSelectors(manifest Manifest, commands, families []string) error {
+	for _, name := range commands {
+		entry, ok := manifest.Surfaces.Commands[name]
+		if !ok {
+			return fmt.Errorf("selected command %q is not present in the manifest", name)
+		}
+		if entry.Status != "covered" {
+			return fmt.Errorf("selected command %q is %s in the manifest, not covered", name, entry.Status)
+		}
+	}
+	for _, name := range families {
+		entry, ok := manifest.Surfaces.Families[name]
+		if !ok {
+			return fmt.Errorf("selected family %q is not present in the manifest", name)
+		}
+		if entry.Status != "covered" {
+			return fmt.Errorf("selected family %q is %s in the manifest, not covered", name, entry.Status)
+		}
+	}
+	return nil
+}
+
+func surfaceTaskKey(task SurfaceTask) string {
+	return task.SurfaceKind + "\x00" + task.SurfaceName + "\x00" + task.Viewpoint
+}
+
+func taskSelectorMatches(task SurfaceTask, commandSelectors, familySelectors map[string]struct{}, selectorsActive bool) bool {
+	if !selectorsActive {
+		return true
+	}
+	if task.SurfaceKind == "commands" {
+		_, ok := commandSelectors[task.SurfaceName]
+		return ok
+	}
+	if task.SurfaceKind == "families" {
+		_, ok := familySelectors[task.SurfaceName]
+		return ok
+	}
+	return false
+}
+
+func runProfileTask(task SurfaceTask) RunProfileTask {
+	return RunProfileTask{
+		SurfaceKind:  task.SurfaceKind,
+		SurfaceName:  task.SurfaceName,
+		Viewpoint:    task.Viewpoint,
+		GroupCommand: task.GroupCommand,
+		Subcommand:   task.Subcommand,
+	}
+}
+
+func runProfileSkippedTask(manifest Manifest, task SurfaceTask, reason string) RunProfileSkippedTask {
+	var entry SurfaceEntry
+	if task.SurfaceKind == "commands" {
+		entry = manifest.Surfaces.Commands[task.SurfaceName]
+	} else {
+		entry = manifest.Surfaces.Families[task.SurfaceName]
+	}
+	viewpointEntry := entry.Viewpoints[task.Viewpoint]
+	reasonCode := viewpointEntry.ReasonCode
+	if reasonCode == "" {
+		reasonCode = entry.ReasonCode
+	}
+	reasonDetail := viewpointEntry.ReasonDetail
+	if reasonDetail == "" {
+		reasonDetail = entry.ReasonDetail
+	}
+	return RunProfileSkippedTask{
+		SurfaceKind:     task.SurfaceKind,
+		SurfaceName:     task.SurfaceName,
+		Viewpoint:       task.Viewpoint,
+		Reason:          reason,
+		SurfaceStatus:   entry.Status,
+		ViewpointStatus: viewpointEntry.Status,
+		ReasonCode:      reasonCode,
+		ReasonDetail:    reasonDetail,
+	}
+}
+
+func BuildRunProfile(manifest Manifest, derived SurfaceSnapshot, runID, profile string, selectedViewpoints, commandSelectors, familySelectors []string) (RunProfileArtifact, []SurfaceTask, error) {
+	commands := normalizeRunProfileSelectors(commandSelectors)
+	families := normalizeRunProfileSelectors(familySelectors)
+	if err := validateRunProfileSelectors(manifest, commands, families); err != nil {
+		return RunProfileArtifact{}, nil, err
+	}
+
+	selectorsActive := len(commands) > 0 || len(families) > 0
+	requiredViewpoints := RequiredViewpoints(manifest)
+	profileName := strings.TrimSpace(profile)
+	if profileName == "" && (selectorsActive || !slices.Equal(selectedViewpoints, requiredViewpoints)) {
+		profileName = "selector"
+	}
+	if profileName == "" {
+		profileName = "release-candidate"
+	}
+
+	commandSelectorSet := map[string]struct{}{}
+	for _, name := range commands {
+		commandSelectorSet[name] = struct{}{}
+	}
+	familySelectorSet := map[string]struct{}{}
+	for _, name := range families {
+		familySelectorSet[name] = struct{}{}
+	}
+	selectedViewpointSet := map[string]struct{}{}
+	for _, viewpoint := range selectedViewpoints {
+		selectedViewpointSet[viewpoint] = struct{}{}
+	}
+
+	admittedTasks := BuildSurfacePlan(manifest, derived, requiredViewpoints)
+	selectedTasks := []SurfaceTask{}
+	selectedKeys := map[string]struct{}{}
+	selectedCommandNames := map[string]struct{}{}
+	selectedFamilyNames := map[string]struct{}{}
+	for _, task := range admittedTasks {
+		if _, ok := selectedViewpointSet[task.Viewpoint]; !ok {
+			continue
+		}
+		if !taskSelectorMatches(task, commandSelectorSet, familySelectorSet, selectorsActive) {
+			continue
+		}
+		selectedTasks = append(selectedTasks, task)
+		selectedKeys[surfaceTaskKey(task)] = struct{}{}
+		if task.SurfaceKind == "commands" {
+			selectedCommandNames[task.SurfaceName] = struct{}{}
+		}
+		if task.SurfaceKind == "families" {
+			selectedFamilyNames[task.SurfaceName] = struct{}{}
+		}
+	}
+	for _, name := range commands {
+		if _, ok := selectedCommandNames[name]; !ok {
+			return RunProfileArtifact{}, nil, fmt.Errorf("selected command %q has no covered viewpoint in this run", name)
+		}
+	}
+	for _, name := range families {
+		if _, ok := selectedFamilyNames[name]; !ok {
+			return RunProfileArtifact{}, nil, fmt.Errorf("selected family %q has no covered viewpoint in this run", name)
+		}
+	}
+
+	selectedRecords := make([]RunProfileTask, 0, len(selectedTasks))
+	for _, task := range selectedTasks {
+		selectedRecords = append(selectedRecords, runProfileTask(task))
+	}
+
+	skippedRecords := []RunProfileSkippedTask{}
+	for _, task := range admittedTasks {
+		if _, ok := selectedKeys[surfaceTaskKey(task)]; ok {
+			continue
+		}
+		reason := "viewpoint_not_selected"
+		if _, ok := selectedViewpointSet[task.Viewpoint]; ok && selectorsActive {
+			reason = "surface_not_selected"
+		}
+		skippedRecords = append(skippedRecords, runProfileSkippedTask(manifest, task, reason))
+	}
+
+	profileArtifact := RunProfileArtifact{
+		RunID:              runID,
+		Profile:            profileName,
+		RequiredViewpoints: requiredViewpoints,
+		SelectedViewpoints: selectedViewpoints,
+		Selectors: RunProfileSelectors{
+			Commands: commands,
+			Families: families,
+		},
+		SelectedCount: len(selectedRecords),
+		SkippedCount:  len(skippedRecords),
+		Selected:      selectedRecords,
+		Skipped:       skippedRecords,
+	}
+	return profileArtifact, selectedTasks, nil
+}
+
+func WriteRunProfile(outputDir string, profile RunProfileArtifact) error {
+	return WriteJSON(filepath.Join(outputDir, "artifacts", "run-profile.json"), profile)
 }
 
 func BuildInvocation(baseCommand []string, task SurfaceTask, outdir, tenant, subscription, devopsOrganization, outputFormat string, includeOutdir bool) []string {
@@ -2578,7 +2831,7 @@ func setupViewpointSession(viewpoint string, credentials map[string]string, fall
 	if err != nil {
 		return "", nil, "", "", err
 	}
-	env := append(os.Environ(), "AZURE_CONFIG_DIR="+configDir)
+	env := envWithOverrides("AZURE_CONFIG_DIR=" + configDir)
 
 	login := exec.Command("az", "login", "--service-principal", "--username", clientID, "--password", clientSecret, "--tenant", tenantID, "--allow-no-subscriptions")
 	if output, err := runProgressCommand(fmt.Sprintf("az login (%s viewpoint)", viewpoint), workingDir, env, progressWriter, login); err != nil {
@@ -2607,7 +2860,7 @@ func setupAdminAmbientSession(fallbackTenant, fallbackSubscription, workingDir s
 		return "", nil, "", "", fmt.Errorf("copy admin Azure CLI config: %w", err)
 	}
 
-	env := append(os.Environ(), "AZURE_CONFIG_DIR="+configDir)
+	env := envWithOverrides("AZURE_CONFIG_DIR=" + configDir)
 	accountShow := exec.Command("az", "account", "show", "--output", "json")
 	accountShowOutput, err := runProgressCommand("az account show (admin viewpoint)", workingDir, env, progressWriter, accountShow)
 	if err != nil {
@@ -2722,6 +2975,9 @@ type AzureRunConfig struct {
 	ToolBin                  string
 	TofuBinary               string
 	RunID                    string
+	RunProfile               string
+	CommandSelectors         []string
+	FamilySelectors          []string
 	Viewpoint                string
 	ViewpointCredentials     string
 	Tenant                   string
@@ -2911,6 +3167,7 @@ func executeTask(task SurfaceTask, baseCommand []string, commandCWD, outputDir, 
 	_ = os.MkdirAll(outdir, 0o755)
 	payloadPath := filepath.Join(outdir, "stdout.json")
 	tablePath := filepath.Join(outdir, "stdout.table.txt")
+	csvPath := filepath.Join(outdir, "stdout.csv")
 	stderrPath := filepath.Join(outdir, "stderr.txt")
 	progressLabel := fmt.Sprintf("%s %s (%s)", task.SurfaceKind, task.SurfaceName, task.Viewpoint)
 	startedAt := UTCTimestamp()
@@ -3028,7 +3285,7 @@ func executeTask(task SurfaceTask, baseCommand []string, commandCWD, outputDir, 
 		}
 	}
 
-	tableInvocation := BuildInvocation(baseCommand, task, outdir, tenant, subscription, devopsOrganization, "table", false)
+	tableInvocation := BuildInvocation(baseCommand, task, outdir, tenant, subscription, devopsOrganization, "table", true)
 	tableExitCode := 0
 	if status == "pass" {
 		var tableInactivityTimeout bool
@@ -3046,11 +3303,32 @@ func executeTask(task SurfaceTask, baseCommand []string, commandCWD, outputDir, 
 		}
 	}
 
+	csvInvocation := BuildInvocation(baseCommand, task, outdir, tenant, subscription, devopsOrganization, "csv", true)
+	csvExitCode := 0
+	if status == "pass" {
+		var csvInactivityTimeout bool
+		var csvDeadlineTimeout bool
+		csvExitCode, _, _, csvInactivityTimeout, csvDeadlineTimeout = runInvocation(csvInvocation, csvPath)
+		if csvInactivityTimeout {
+			status = "fail"
+			notes = fmt.Sprintf("JSON and table runs succeeded, but the CSV rerun went quiet for %.0f seconds with no output or artifact updates. Treat CSV-versus-payload review as blocked until the CSV artifact is usable.", inactivityTimeout.Seconds())
+		} else if csvDeadlineTimeout {
+			status = "fail"
+			notes = fmt.Sprintf("JSON and table runs succeeded, but the CSV rerun timed out after %.0f seconds. Treat CSV-versus-payload review as blocked until the CSV artifact is usable.", timeout.Seconds())
+		} else if csvExitCode != 0 {
+			status = "fail"
+			notes = fmt.Sprintf("JSON and table runs succeeded, but the CSV rerun failed with exit code %d. Treat CSV-versus-payload review as blocked until the CSV artifact is usable.", csvExitCode)
+		}
+	}
+
 	finishedAt := UTCTimestamp()
 	durationSeconds := time.Since(started).Seconds()
 	reportedExitCode := jsonExitCode
 	if status == "fail" && tableExitCode != 0 {
 		reportedExitCode = tableExitCode
+	}
+	if status == "fail" && csvExitCode != 0 {
+		reportedExitCode = csvExitCode
 	}
 	entryError := ""
 	if jsonErr != nil && reportedExitCode == jsonExitCode {
@@ -3068,6 +3346,7 @@ func executeTask(task SurfaceTask, baseCommand []string, commandCWD, outputDir, 
 		DurationSeconds: durationSeconds,
 		PayloadPath:     "",
 		TablePath:       "",
+		CSVPath:         "",
 		StderrPath:      "",
 		Error:           entryError,
 	}
@@ -3076,6 +3355,9 @@ func executeTask(task SurfaceTask, baseCommand []string, commandCWD, outputDir, 
 	}
 	if _, err := os.Stat(tablePath); err == nil {
 		entry.TablePath = artifactRelpath(outputDir, tablePath)
+	}
+	if _, err := os.Stat(csvPath); err == nil {
+		entry.CSVPath = artifactRelpath(outputDir, csvPath)
 	}
 	if _, err := os.Stat(stderrPath); err == nil {
 		entry.StderrPath = artifactRelpath(outputDir, stderrPath)
@@ -3117,17 +3399,24 @@ func RunAzureValidation(config AzureRunConfig) (int, error) {
 	runResult.FinishedAt = runResult.StartedAt
 
 	selectedViewpoints := SelectedViewpoints(manifest, config.Viewpoint)
-	tasks := BuildSurfacePlan(manifest, derivedSurface, selectedViewpoints)
+	runProfile, tasks, err := BuildRunProfile(manifest, derivedSurface, config.RunID, config.RunProfile, selectedViewpoints, config.CommandSelectors, config.FamilySelectors)
+	if err != nil {
+		return 1, err
+	}
 	credentials, tenant, subscription, err := resolveRunContext(config, selectedViewpoints)
 	if err != nil {
 		return 1, err
 	}
-	emitProgress(config.ProgressWriter, "Running %d covered checks for viewpoints: %s", len(tasks), strings.Join(selectedViewpoints, ", "))
+	emitProgress(config.ProgressWriter, "Running %d covered checks for profile %s and viewpoints: %s", len(tasks), runProfile.Profile, strings.Join(selectedViewpoints, ", "))
 	commandTimeout := effectiveAzureCommandTimeout(config)
 	commandInactivityTimeout := effectiveAzureCommandInactivityTimeout(config)
 	commandSlowThreshold := effectiveAzureSlowCommandThreshold(config)
 
 	entries := []CommandLogEntry{}
+	if err := WriteRunProfile(outputDir, runProfile); err != nil {
+		return 1, err
+	}
+	runResult.Artifacts["run_profile"] = ArtifactRecord{Path: "artifacts/run-profile.json"}
 	if err := WriteCommandLog(outputDir, config.RunID, entries); err != nil {
 		return 1, err
 	}
@@ -3138,8 +3427,9 @@ func RunAzureValidation(config AzureRunConfig) (int, error) {
 		return 1, err
 	}
 
-	for _, task := range tasks {
-		env := append(os.Environ(), "AZUREFOX_PROVIDER=azure")
+	for taskIndex, task := range tasks {
+		emitProgress(config.ProgressWriter, "check %d/%d: %s %s %s", taskIndex+1, len(tasks), task.SurfaceKind, task.SurfaceName, task.Viewpoint)
+		env := envWithOverrides("AZUREFOX_PROVIDER=azure")
 		taskTenant := tenant
 		taskSubscription := subscription
 		tempConfigDir := ""
@@ -3713,10 +4003,14 @@ func RunValidation(config AzureRunConfig) (int, error) {
 		return 1, err
 	}
 
-	if runExitCode != 0 || liveExitCode != 0 || !validationSummary.ReleaseReady {
+	if runExitCode != 0 || liveExitCode != 0 || validationSummary.CompletionStatus != "complete" {
 		emitProgress(config.ProgressWriter, "Azure validation found issues. Review the completion summary and findings before release.")
 		return 1, nil
 	}
-	emitProgress(config.ProgressWriter, "Azure validation succeeded. The run artifacts and summaries are ready to review.")
+	if validationSummary.ReleaseReady {
+		emitProgress(config.ProgressWriter, "Azure validation succeeded. The run artifacts and summaries are ready to review.")
+	} else {
+		emitProgress(config.ProgressWriter, "Azure validation completed for the selected run profile. Review the completion summary before treating it as release proof.")
+	}
 	return 0, nil
 }

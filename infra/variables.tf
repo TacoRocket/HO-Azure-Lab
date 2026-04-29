@@ -84,6 +84,12 @@ variable "enable_azure_ml" {
   default     = false
 }
 
+variable "azure_ml_workspace_name" {
+  description = "Optional Azure ML workspace name for the opt-in AML lane. labctl writes a generated name so soft-deleted lab workspaces do not block validation reruns."
+  type        = string
+  default     = ""
+}
+
 variable "enable_deployment_path_addin" {
   description = "Enable the deployment-path add-in lane. This stays off by default so Automation execution proof can be added separately from the base lab apply."
   type        = bool

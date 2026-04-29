@@ -19,13 +19,14 @@ var SupportedReasonCodes = []string{
 
 var truthFirstBootstrapCoveredCommands = map[string]struct{}{
 	"acr": {}, "aks": {}, "api-mgmt": {}, "app-credentials": {}, "app-services": {}, "application-gateway": {},
-	"arm-deployments": {}, "auth-policies": {}, "automation": {}, "azure-ml": {}, "container-apps": {},
-	"container-instances": {}, "cross-tenant": {}, "databases": {}, "dns": {}, "endpoints": {}, "env-vars": {},
-	"event-grid": {}, "functions": {}, "inventory": {}, "keyvault": {}, "logic-apps": {}, "managed-identities": {},
+	"arm-deployments": {}, "auth-policies": {}, "automation": {}, "azure-ml": {}, "container-apps": {}, "container-apps-jobs": {},
+	"container-instances": {}, "cross-tenant": {}, "databases": {}, "diagnostic-settings": {}, "dns": {}, "endpoints": {}, "env-vars": {},
+	"event-grid": {}, "eventhubs": {}, "foundcredentials": {}, "functions": {}, "inventory": {}, "keyvault": {},
+	"logic-apps": {}, "loganalytics": {}, "managed-identities": {}, "dcr": {}, "monitoring-sinks": {},
 	"network-effective": {}, "network-ports": {}, "nics": {}, "permissions": {},
 	"principals": {}, "privesc": {}, "rbac": {}, "resource-trusts": {}, "role-trusts": {},
-	"snapshots-disks": {}, "storage": {}, "tokens-credentials": {}, "vms": {}, "vmss": {},
-	"whoami": {}, "workloads": {},
+	"snapshots-disks": {}, "storage": {}, "tokens-credentials": {}, "vms": {}, "vm-extensions": {}, "vmss": {},
+	"webjobs": {}, "whoami": {}, "workloads": {},
 }
 
 type bootstrapManualSurface struct {
@@ -49,15 +50,23 @@ var truthFirstBootstrapFollowupCommands = map[string]struct{}{
 }
 
 var truthFirstBootstrapCoveredFamilies = map[string]struct{}{
-	"automation":      {},
-	"compute-control": {},
-	"credential-path": {},
-	"deployment-path": {},
-	"escalation-path": {},
-	"logic-apps":      {},
+	"automation":          {},
+	"compute-control":     {},
+	"container-apps-jobs": {},
+	"credential-path":     {},
+	"deployment-path":     {},
+	"dcr":                 {},
+	"escalation-path":     {},
+	"logic-apps":          {},
+	"vm-extensions":       {},
 }
 
 var truthFirstBootstrapFollowupFamilies = map[string]struct{}{}
+
+var truthFirstBootstrapFamilyGroupCommands = map[string]string{
+	"api-mgmt": "resourcehijacking",
+	"dcr":      "evasion",
+}
 
 func buildSurfaceEntry(defaultStatus, reasonCode string) SurfaceEntry {
 	viewpoints := map[string]ViewpointStatus{}
@@ -186,6 +195,11 @@ func buildTruthFirstBootstrapManifest(hoAzureDir string) (Manifest, error) {
 	for _, name := range surface.Families {
 		if _, ok := truthFirstBootstrapCoveredFamilies[name]; ok {
 			manifest.Surfaces.Families[name] = buildProfiledSurfaceEntry("covered", "", "", nil)
+			if groupCommand := truthFirstBootstrapFamilyGroupCommands[name]; groupCommand != "" {
+				entry := manifest.Surfaces.Families[name]
+				entry.GroupCommand = groupCommand
+				manifest.Surfaces.Families[name] = entry
+			}
 			continue
 		}
 		if _, ok := truthFirstBootstrapFollowupFamilies[name]; ok {

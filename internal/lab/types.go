@@ -28,6 +28,8 @@ type ViewpointStatus struct {
 
 type SurfaceEntry struct {
 	Status           string                     `json:"status"`
+	GroupCommand     string                     `json:"group_command,omitempty"`
+	Subcommand       string                     `json:"subcommand,omitempty"`
 	ReasonCode       string                     `json:"reason_code,omitempty"`
 	ReasonDetail     string                     `json:"reason_detail,omitempty"`
 	ManualSetupSteps []string                   `json:"manual_setup_steps,omitempty"`
@@ -133,6 +135,7 @@ type CommandLogEntry struct {
 	DurationSeconds float64 `json:"duration_seconds"`
 	PayloadPath     string  `json:"payload_path"`
 	TablePath       string  `json:"table_path,omitempty"`
+	CSVPath         string  `json:"csv_path,omitempty"`
 	StderrPath      string  `json:"stderr_path"`
 	Error           string  `json:"error,omitempty"`
 }
@@ -150,6 +153,50 @@ type CommandTimeline struct {
 	Scope      RunScope          `json:"scope"`
 	EntryCount int               `json:"entry_count"`
 	Entries    []CommandLogEntry `json:"entries"`
+}
+
+type RunProfileSelectors struct {
+	Commands []string `json:"commands"`
+	Families []string `json:"families"`
+}
+
+type RunProfileDefinition struct {
+	Profile   string   `json:"profile"`
+	Viewpoint string   `json:"viewpoint,omitempty"`
+	Commands  []string `json:"commands,omitempty"`
+	Families  []string `json:"families,omitempty"`
+	Notes     string   `json:"notes,omitempty"`
+}
+
+type RunProfileTask struct {
+	SurfaceKind  string `json:"surface_kind"`
+	SurfaceName  string `json:"surface_name"`
+	Viewpoint    string `json:"viewpoint"`
+	GroupCommand string `json:"group_command,omitempty"`
+	Subcommand   string `json:"subcommand,omitempty"`
+}
+
+type RunProfileSkippedTask struct {
+	SurfaceKind     string `json:"surface_kind"`
+	SurfaceName     string `json:"surface_name"`
+	Viewpoint       string `json:"viewpoint"`
+	Reason          string `json:"reason"`
+	SurfaceStatus   string `json:"surface_status"`
+	ViewpointStatus string `json:"viewpoint_status"`
+	ReasonCode      string `json:"reason_code,omitempty"`
+	ReasonDetail    string `json:"reason_detail,omitempty"`
+}
+
+type RunProfileArtifact struct {
+	RunID              string                  `json:"run_id"`
+	Profile            string                  `json:"profile"`
+	RequiredViewpoints []string                `json:"required_viewpoints"`
+	SelectedViewpoints []string                `json:"selected_viewpoints"`
+	Selectors          RunProfileSelectors     `json:"selectors"`
+	SelectedCount      int                     `json:"selected_count"`
+	SkippedCount       int                     `json:"skipped_count"`
+	Selected           []RunProfileTask        `json:"selected"`
+	Skipped            []RunProfileSkippedTask `json:"skipped"`
 }
 
 type SurfaceTask struct {
@@ -185,8 +232,19 @@ type ValidationSummaryEnvelope struct {
 	RequiredViewpoints  []string        `json:"required_viewpoints"`
 	ShippedCommandCount int             `json:"shipped_command_count"`
 	ShippedFamilyCount  int             `json:"shipped_family_count"`
+	RunProfile          *RunProfileView `json:"run_profile,omitempty"`
 	Commands            StatusBreakdown `json:"commands"`
 	Families            StatusBreakdown `json:"families"`
+}
+
+type RunProfileView struct {
+	Profile            string              `json:"profile"`
+	RequiredViewpoints []string            `json:"required_viewpoints"`
+	SelectedViewpoints []string            `json:"selected_viewpoints"`
+	Selectors          RunProfileSelectors `json:"selectors"`
+	SelectedCount      int                 `json:"selected_count"`
+	SkippedCount       int                 `json:"skipped_count"`
+	ReleaseGate        bool                `json:"release_gate"`
 }
 
 type LiveValidationSummary struct {

@@ -18,6 +18,8 @@ aks_vm_size = "Standard_D2s_v3"
 
 # Optional richer proof add-ins:
 # enable_deployment_path_addin = true
+# enable_resource_hijacking_addin = true
+# enable_exfil_addin = true
 # enable_compute_control_addin = true
 # enable_persistence_addin = true
 

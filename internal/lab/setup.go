@@ -1,6 +1,7 @@
 package lab
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -12,6 +13,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,8 +33,12 @@ type AzureSetupConfig struct {
 	AKSVMSize                     string
 	EnableRoleTrustsCanary        bool
 	EnableDeploymentHistoryCanary bool
+	EnableDefaultFollowUps        bool
 	EnableAzureML                 bool
+	AzureMLWorkspaceName          string
 	EnableDeploymentPathAddin     bool
+	EnableResourceHijackingAddin  bool
+	EnableExfilAddin              bool
 	EnableComputeControlAddin     bool
 	EnablePersistenceAddin        bool
 	EnableHumanUserViewpoints     bool
@@ -72,7 +79,10 @@ var defaultFollowUpInfrastructureSteps = []followUpInfraStep{
 }
 
 func followUpInfrastructureSteps(config AzureSetupConfig) []followUpInfraStep {
-	steps := append([]followUpInfraStep{}, defaultFollowUpInfrastructureSteps...)
+	steps := []followUpInfraStep{}
+	if shouldRunDefaultFollowUps(config) {
+		steps = append(steps, defaultFollowUpInfrastructureSteps...)
+	}
 	if config.EnableAzureML {
 		steps = append(steps, followUpInfraStep{
 			Name: "Azure ML",
@@ -95,6 +105,31 @@ func followUpInfrastructureSteps(config AzureSetupConfig) []followUpInfraStep {
 			},
 		})
 	}
+	if config.EnableResourceHijackingAddin {
+		steps = append(steps, followUpInfraStep{
+			Name: "Resource Hijacking Add-in",
+			Targets: []string{
+				"azurerm_automation_runbook.resource_hijacking[0]",
+				"azurerm_automation_schedule.resource_hijacking[0]",
+				"azurerm_automation_job_schedule.resource_hijacking[0]",
+				"azurerm_automation_webhook.resource_hijacking[0]",
+			},
+		})
+	}
+	if config.EnableExfilAddin {
+		steps = append(steps, followUpInfraStep{
+			Name: "Exfil Add-in",
+			Targets: []string{
+				"azurerm_eventhub_namespace.exfil[0]",
+				"azurerm_eventhub.exfil_telemetry[0]",
+				"azurerm_eventhub_consumer_group.exfil_review[0]",
+				"azurerm_eventhub_namespace_authorization_rule.exfil_diagnostic_send[0]",
+				"azurerm_monitor_diagnostic_setting.exfil_public_app_loganalytics[0]",
+				"azurerm_monitor_diagnostic_setting.exfil_public_app_eventhub[0]",
+				"azurerm_monitor_diagnostic_setting.exfil_public_app_storage[0]",
+			},
+		})
+	}
 	if config.EnableComputeControlAddin {
 		steps = append(steps, followUpInfraStep{
 			Name: "Compute Control Add-in",
@@ -110,8 +145,39 @@ func followUpInfrastructureSteps(config AzureSetupConfig) []followUpInfraStep {
 				"azurerm_logic_app_workflow.persistence[0]",
 				"azurerm_logic_app_trigger_recurrence.persistence[0]",
 				"azurerm_logic_app_action_http.persistence[0]",
+				"azurerm_api_connection.queue[0]",
+				"azurerm_logic_app_action_custom.persistence_queue_connector[0]",
+				"azurerm_logic_app_workflow.no_identity[0]",
+				"azurerm_logic_app_trigger_recurrence.no_identity[0]",
+				"azurerm_logic_app_action_http.no_identity[0]",
 			},
 		})
+	}
+	return steps
+}
+
+func shouldRunDefaultFollowUps(config AzureSetupConfig) bool {
+	if config.EnableDefaultFollowUps {
+		return true
+	}
+	return strings.TrimSpace(config.CostProfile) == "default"
+}
+
+func coreExcludedInfrastructureSteps(activeFollowUpSteps []followUpInfraStep) []followUpInfraStep {
+	steps := make([]followUpInfraStep, 0, len(defaultFollowUpInfrastructureSteps)+len(activeFollowUpSteps))
+	seen := map[string]struct{}{}
+	addStep := func(step followUpInfraStep) {
+		if _, ok := seen[step.Name]; ok {
+			return
+		}
+		seen[step.Name] = struct{}{}
+		steps = append(steps, step)
+	}
+	for _, step := range defaultFollowUpInfrastructureSteps {
+		addStep(step)
+	}
+	for _, step := range activeFollowUpSteps {
+		addStep(step)
 	}
 	return steps
 }
@@ -124,6 +190,10 @@ func DefaultGeneratedHumanUsersPath(infraDir string) string {
 	return filepath.Join(filepath.Dir(infraDir), ".generated", "human-viewpoints.json")
 }
 
+func DefaultGeneratedAzureMLWorkspaceNamePath(infraDir string) string {
+	return filepath.Join(filepath.Dir(infraDir), ".generated", "azure-ml-workspace-name")
+}
+
 func BuildAzureSetupTFVars(config AzureSetupConfig) map[string]any {
 	return map[string]any{
 		"location":                         strings.TrimSpace(config.Location),
@@ -134,7 +204,10 @@ func BuildAzureSetupTFVars(config AzureSetupConfig) map[string]any {
 		"enable_role_trusts_canary":        config.EnableRoleTrustsCanary,
 		"enable_deployment_history_canary": config.EnableDeploymentHistoryCanary,
 		"enable_azure_ml":                  config.EnableAzureML,
+		"azure_ml_workspace_name":          strings.TrimSpace(config.AzureMLWorkspaceName),
 		"enable_deployment_path_addin":     config.EnableDeploymentPathAddin,
+		"enable_resource_hijacking_addin":  config.EnableResourceHijackingAddin,
+		"enable_exfil_addin":               config.EnableExfilAddin,
 		"enable_compute_control_addin":     config.EnableComputeControlAddin,
 		"enable_persistence_addin":         config.EnablePersistenceAddin,
 	}
@@ -168,6 +241,14 @@ func RunAzureSetup(config AzureSetupConfig) (string, int, error) {
 		return "", 0, err
 	}
 	config.SSHPublicKey = resolvedKey
+	if config.EnableAzureML {
+		workspaceName, err := resolveAzureMLWorkspaceName(config)
+		if err != nil {
+			return "", 0, err
+		}
+		config.AzureMLWorkspaceName = workspaceName
+		fmt.Fprintf(progressWriter, "Using Azure ML workspace name %s\n", workspaceName)
+	}
 
 	outputPath := strings.TrimSpace(config.OutputPath)
 	if outputPath == "" {
@@ -203,7 +284,7 @@ func RunAzureSetup(config AzureSetupConfig) (string, int, error) {
 	activeFollowUpSteps := followUpInfrastructureSteps(config)
 
 	fmt.Fprintln(progressWriter, "Running core OpenTofu apply...")
-	applyErr := runTofuCommand(progressWriter, infraDir, tofuBinary, buildCoreApplyArgs(outputPath, activeFollowUpSteps)...)
+	applyErr := runTofuCommand(progressWriter, infraDir, tofuBinary, buildCoreApplyArgs(outputPath, coreExcludedInfrastructureSteps(activeFollowUpSteps))...)
 	postApplyReady := applyErr == nil
 	if applyErr != nil {
 		if err := verifyCoreLabOutputs(infraDir, tofuBinary); err != nil {
@@ -259,13 +340,154 @@ func RunAzureSetup(config AzureSetupConfig) (string, int, error) {
 	return outputPath, 0, nil
 }
 
+func resolveAzureMLWorkspaceName(config AzureSetupConfig) (string, error) {
+	if name := strings.TrimSpace(config.AzureMLWorkspaceName); name != "" {
+		return name, nil
+	}
+	path := DefaultGeneratedAzureMLWorkspaceNamePath(config.InfraDir)
+	if data, err := os.ReadFile(path); err == nil {
+		if name := strings.TrimSpace(string(data)); name != "" {
+			return name, nil
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("read Azure ML workspace name from %s: %w", path, err)
+	}
+	suffix, err := randomFromAlphabet(8, "abcdefghijklmnopqrstuvwxyz0123456789")
+	if err != nil {
+		return "", err
+	}
+	name := "aml2-ops-" + suffix
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return "", fmt.Errorf("create Azure ML workspace name directory: %w", err)
+	}
+	if err := os.WriteFile(path, []byte(name+"\n"), 0o600); err != nil {
+		return "", fmt.Errorf("write Azure ML workspace name to %s: %w", path, err)
+	}
+	return name, nil
+}
+
 func runTofuCommand(progressWriter io.Writer, workingDir, tofuBinary string, args ...string) error {
 	cmd := exec.Command(tofuBinary, args...)
 	cmd.Dir = workingDir
-	cmd.Stdout = progressWriter
+	stdout := newTofuProgressWriter(progressWriter)
+	cmd.Stdout = stdout
 	cmd.Stderr = progressWriter
 	cmd.Env = os.Environ()
-	return cmd.Run()
+	err := cmd.Run()
+	_ = stdout.Flush()
+	return err
+}
+
+var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
+
+type tofuProgressWriter struct {
+	dst       io.Writer
+	line      bytes.Buffer
+	total     int
+	started   int
+	completed int
+	seenStart map[string]struct{}
+	seenDone  map[string]struct{}
+}
+
+func newTofuProgressWriter(dst io.Writer) *tofuProgressWriter {
+	if dst == nil {
+		dst = io.Discard
+	}
+	return &tofuProgressWriter{
+		dst:       dst,
+		seenStart: map[string]struct{}{},
+		seenDone:  map[string]struct{}{},
+	}
+}
+
+func (w *tofuProgressWriter) Write(data []byte) (int, error) {
+	if _, err := w.dst.Write(data); err != nil {
+		return 0, err
+	}
+	for _, b := range data {
+		w.line.WriteByte(b)
+		if b == '\n' {
+			w.processLine(w.line.String())
+			w.line.Reset()
+		}
+	}
+	return len(data), nil
+}
+
+func (w *tofuProgressWriter) Flush() error {
+	if w.line.Len() == 0 {
+		return nil
+	}
+	w.processLine(w.line.String())
+	w.line.Reset()
+	return nil
+}
+
+func (w *tofuProgressWriter) processLine(line string) {
+	clean := strings.TrimSpace(ansiEscapePattern.ReplaceAllString(line, ""))
+	if clean == "" {
+		return
+	}
+	if total, ok := plannedCreateCount(clean); ok {
+		w.total = total
+		fmt.Fprintf(w.dst, "OpenTofu rollout plan: %d resource(s) to create.\n", total)
+		return
+	}
+	if resource, ok := tofuResourceStatus(clean, "Creating..."); ok {
+		if _, seen := w.seenStart[resource]; seen {
+			return
+		}
+		w.seenStart[resource] = struct{}{}
+		w.started++
+		fmt.Fprintf(w.dst, "OpenTofu rollout start %s: %s\n", w.progressLabel(w.started), resource)
+		return
+	}
+	if resource, ok := tofuResourceStatus(clean, "Creation complete"); ok {
+		if _, seen := w.seenDone[resource]; seen {
+			return
+		}
+		w.seenDone[resource] = struct{}{}
+		w.completed++
+		fmt.Fprintf(w.dst, "OpenTofu rollout complete %s: %s\n", w.progressLabel(w.completed), resource)
+	}
+}
+
+func (w *tofuProgressWriter) progressLabel(current int) string {
+	if w.total > 0 {
+		return fmt.Sprintf("%d/%d", current, w.total)
+	}
+	return fmt.Sprintf("%d/?", current)
+}
+
+func plannedCreateCount(line string) (int, bool) {
+	const prefix = "Plan: "
+	start := strings.Index(line, prefix)
+	if start == -1 {
+		return 0, false
+	}
+	rest := line[start+len(prefix):]
+	end := strings.Index(rest, " to add")
+	if end == -1 {
+		return 0, false
+	}
+	total, err := strconv.Atoi(strings.TrimSpace(rest[:end]))
+	if err != nil {
+		return 0, false
+	}
+	return total, true
+}
+
+func tofuResourceStatus(line, marker string) (string, bool) {
+	if !strings.Contains(line, marker) {
+		return "", false
+	}
+	colon := strings.Index(line, ":")
+	if colon == -1 {
+		return "", false
+	}
+	resource := strings.TrimSpace(line[:colon])
+	return resource, resource != ""
 }
 
 func buildCoreApplyArgs(outputPath string, followUpSteps []followUpInfraStep) []string {
@@ -558,14 +780,14 @@ func validateAzureUserLogin(azureBinary, upn, password string) error {
 		"--output", "none",
 		"--only-show-errors",
 	)
-	loginCmd.Env = append(os.Environ(), "AZURE_CONFIG_DIR="+configDir)
+	loginCmd.Env = envWithOverrides("AZURE_CONFIG_DIR=" + configDir)
 	output, err := loginCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s", strings.TrimSpace(string(output)))
 	}
 
 	accountCmd := exec.Command(azureBinary, "account", "show", "--output", "none", "--only-show-errors")
-	accountCmd.Env = append(os.Environ(), "AZURE_CONFIG_DIR="+configDir)
+	accountCmd.Env = envWithOverrides("AZURE_CONFIG_DIR=" + configDir)
 	output, err = accountCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("az account show after login failed: %s", strings.TrimSpace(string(output)))

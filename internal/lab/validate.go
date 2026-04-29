@@ -136,6 +136,11 @@ func equalStringMapSlices(left, right map[string][]string) bool {
 	return true
 }
 
+func payloadGroupedCommandName(payload map[string]any) string {
+	value, _ := payload["grouped_command_name"].(string)
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
 func equalScopeSummary(left, right ScopeSummary) bool {
 	return equalStringSlices(left.Covered, right.Covered) &&
 		equalStringMapSlices(left.ExceptedByReason, right.ExceptedByReason) &&
@@ -148,7 +153,67 @@ func checkScopeSection(automaticFailures *[]string, surfaceKind string, manifest
 	}
 }
 
-func validateRunResults(manifest Manifest, runResults RunResult, runResultsPath string, manifestCommands, manifestFamilies map[string]SurfaceEntry, requiredViewpoints []string) ([]string, []string, []ReviewTopic, []ToolRepoHandoffPrompt) {
+func loadRunProfile(runResults RunResult, runResultsPath string) (*RunProfileArtifact, error) {
+	record, ok := runResults.Artifacts["run_profile"]
+	if !ok {
+		return nil, nil
+	}
+	artifactPath := record.Path
+	if !filepath.IsAbs(artifactPath) {
+		artifactPath = filepath.Join(filepath.Dir(runResultsPath), artifactPath)
+	}
+	profile := RunProfileArtifact{}
+	if err := LoadJSON(artifactPath, &profile); err != nil {
+		return nil, err
+	}
+	return &profile, nil
+}
+
+func runProfileReleaseGate(profile *RunProfileArtifact) bool {
+	return profile == nil || (profile.Profile == "release-candidate" && profile.SkippedCount == 0)
+}
+
+func runProfileView(profile *RunProfileArtifact) *RunProfileView {
+	if profile == nil {
+		return nil
+	}
+	return &RunProfileView{
+		Profile:            profile.Profile,
+		RequiredViewpoints: append([]string{}, profile.RequiredViewpoints...),
+		SelectedViewpoints: append([]string{}, profile.SelectedViewpoints...),
+		Selectors: RunProfileSelectors{
+			Commands: append([]string{}, profile.Selectors.Commands...),
+			Families: append([]string{}, profile.Selectors.Families...),
+		},
+		SelectedCount: profile.SelectedCount,
+		SkippedCount:  profile.SkippedCount,
+		ReleaseGate:   runProfileReleaseGate(profile),
+	}
+}
+
+func runProfileSelectedSet(profile *RunProfileArtifact) map[string]struct{} {
+	selected := map[string]struct{}{}
+	if profile == nil {
+		return selected
+	}
+	for _, task := range profile.Selected {
+		selected[task.SurfaceKind+"\x00"+task.SurfaceName+"\x00"+task.Viewpoint] = struct{}{}
+	}
+	return selected
+}
+
+func runProfileSkippedSet(profile *RunProfileArtifact) map[string]struct{} {
+	skipped := map[string]struct{}{}
+	if profile == nil {
+		return skipped
+	}
+	for _, task := range profile.Skipped {
+		skipped[task.SurfaceKind+"\x00"+task.SurfaceName+"\x00"+task.Viewpoint] = struct{}{}
+	}
+	return skipped
+}
+
+func validateRunResults(manifest Manifest, runResults RunResult, runResultsPath string, manifestCommands, manifestFamilies map[string]SurfaceEntry, requiredViewpoints []string, runProfile *RunProfileArtifact) ([]string, []string, []ReviewTopic, []ToolRepoHandoffPrompt) {
 	automaticPasses := []string{}
 	automaticFailures := []string{}
 	toolRepoHandoffPrompts := []ToolRepoHandoffPrompt{}
@@ -164,11 +229,23 @@ func validateRunResults(manifest Manifest, runResults RunResult, runResultsPath 
 	checkScopeSection(&automaticFailures, "commands", manifestCommands, runResults.Scope.Commands)
 	checkScopeSection(&automaticFailures, "families", manifestFamilies, runResults.Scope.Families)
 
+	selectedSet := runProfileSelectedSet(runProfile)
+	skippedSet := runProfileSkippedSet(runProfile)
 	checkSurfaceResults := func(surfaceKind string, manifestEntries map[string]SurfaceEntry, runSurfaceResults map[string]map[string]ViewpointResult) {
 		for name, entry := range manifestEntries {
 			for viewpoint, viewpointEntry := range entry.Viewpoints {
 				if viewpointEntry.Status != "covered" {
 					continue
+				}
+				taskKey := surfaceKind + "\x00" + name + "\x00" + viewpoint
+				if runProfile != nil {
+					if _, ok := skippedSet[taskKey]; ok {
+						continue
+					}
+					if _, ok := selectedSet[taskKey]; !ok {
+						automaticFailures = append(automaticFailures, fmt.Sprintf("run profile does not classify %s %s viewpoint %s as selected or skipped", strings.TrimSuffix(surfaceKind, "s"), name, viewpoint))
+						continue
+					}
 				}
 				resultRecord, ok := runSurfaceResults[name][viewpoint]
 				if !ok {
@@ -255,6 +332,9 @@ func validateRunResults(manifest Manifest, runResults RunResult, runResultsPath 
 	}
 
 	if len(automaticFailures) == 0 {
+		if runProfile != nil {
+			automaticPasses = append(automaticPasses, fmt.Sprintf("run profile %s completed selected scope (%d selected, %d skipped)", runProfile.Profile, runProfile.SelectedCount, runProfile.SkippedCount))
+		}
 		automaticPasses = append(automaticPasses,
 			"completion-verifier checks passed for required covered surfaces",
 			"required artifacts and teardown records are present and fresh",
@@ -277,6 +357,7 @@ func ValidateLab(manifestPath, hoAzureDir, runResultsPath string) (ValidationSum
 	requiredReviewTopics := manifest.Completion.RequiredReviewTopics
 	toolRepoHandoffPrompts := []ToolRepoHandoffPrompt{}
 	var runResults *RunResult
+	var runProfile *RunProfileArtifact
 
 	if runResultsPath != "" {
 		loaded := RunResult{}
@@ -284,6 +365,11 @@ func ValidateLab(manifestPath, hoAzureDir, runResultsPath string) (ValidationSum
 			return ValidationSummary{}, err
 		}
 		runResults = &loaded
+		loadedRunProfile, err := loadRunProfile(loaded, runResultsPath)
+		if err != nil {
+			return ValidationSummary{}, err
+		}
+		runProfile = loadedRunProfile
 		runPasses, runFailures, runReviewTopics, runHandoffs := validateRunResults(
 			manifest,
 			loaded,
@@ -291,6 +377,7 @@ func ValidateLab(manifestPath, hoAzureDir, runResultsPath string) (ValidationSum
 			manifest.Surfaces.Commands,
 			manifest.Surfaces.Families,
 			requiredViewpoints,
+			runProfile,
 		)
 		automaticPasses = append(automaticPasses, runPasses...)
 		automaticFailures = append(automaticFailures, runFailures...)
@@ -303,7 +390,7 @@ func ValidateLab(manifestPath, hoAzureDir, runResultsPath string) (ValidationSum
 		completionStatus = "incomplete"
 	}
 	releaseReady := false
-	if completionStatus == "complete" && runResults != nil && slices.Contains(ReleasableOutcomes, runResults.FinalOutcome) {
+	if completionStatus == "complete" && runResults != nil && slices.Contains(ReleasableOutcomes, runResults.FinalOutcome) && runProfileReleaseGate(runProfile) {
 		releaseReady = true
 	}
 
@@ -318,6 +405,7 @@ func ValidateLab(manifestPath, hoAzureDir, runResultsPath string) (ValidationSum
 			RequiredViewpoints:  requiredViewpoints,
 			ShippedCommandCount: len(derivedSurface.Commands),
 			ShippedFamilyCount:  len(derivedSurface.Families),
+			RunProfile:          runProfileView(runProfile),
 			Commands:            summarizeSurfaceEntries(manifest.Surfaces.Commands),
 			Families:            summarizeSurfaceEntries(manifest.Surfaces.Families),
 		},
@@ -333,6 +421,12 @@ func RenderText(payload ValidationSummary) string {
 		"Required viewpoints: " + strings.Join(payload.Summary.RequiredViewpoints, ", "),
 		fmt.Sprintf("Manifest command split: %d covered, %d excepted, %d unsupported", payload.Summary.Commands.Counts["covered"], payload.Summary.Commands.Counts["excepted"], payload.Summary.Commands.Counts["unsupported"]),
 		fmt.Sprintf("Manifest family split: %d covered, %d excepted, %d unsupported", payload.Summary.Families.Counts["covered"], payload.Summary.Families.Counts["excepted"], payload.Summary.Families.Counts["unsupported"]),
+	}
+	if payload.Summary.RunProfile != nil {
+		lines = append(lines, fmt.Sprintf("Run profile: %s (%d selected, %d skipped, release gate: %s)", payload.Summary.RunProfile.Profile, payload.Summary.RunProfile.SelectedCount, payload.Summary.RunProfile.SkippedCount, map[bool]string{true: "yes", false: "no"}[payload.Summary.RunProfile.ReleaseGate]))
+		if len(payload.Summary.RunProfile.SelectedViewpoints) > 0 {
+			lines = append(lines, "Selected viewpoints: "+strings.Join(payload.Summary.RunProfile.SelectedViewpoints, ", "))
+		}
 	}
 
 	if manual := payload.Summary.Commands.ByReason["manual_setup_not_done"]; len(manual) > 0 {
@@ -2842,7 +2936,7 @@ func ValidateLiveRun(runResultsPath, hoAzureDir string) (LiveValidationSummary, 
 				}
 			}
 		}
-		if entry.SurfaceKind == "families" && entry.SurfaceName == "automation" && surface.FamilyGroupCommands[entry.SurfaceName] == "persistence" {
+		if entry.SurfaceKind == "families" && entry.SurfaceName == "automation" && payloadGroupedCommandName(payload) == "persistence" {
 			automationPayload, automationErr := loadSiblingCommandPayload(payloadPath, "automation", entry.Viewpoint)
 			if automationErr != nil {
 				findings = append(findings, makeBlockingFinding(
@@ -2875,7 +2969,7 @@ func ValidateLiveRun(runResultsPath, hoAzureDir string) (LiveValidationSummary, 
 				}
 			}
 		}
-		if entry.SurfaceKind == "families" && entry.SurfaceName == "logic-apps" && surface.FamilyGroupCommands[entry.SurfaceName] == "persistence" {
+		if entry.SurfaceKind == "families" && entry.SurfaceName == "logic-apps" && payloadGroupedCommandName(payload) == "persistence" {
 			logicAppsPayload, logicAppsErr := loadSiblingCommandPayload(payloadPath, "logic-apps", entry.Viewpoint)
 			if logicAppsErr != nil {
 				findings = append(findings, makeBlockingFinding(

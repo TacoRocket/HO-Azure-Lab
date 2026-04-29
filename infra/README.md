@@ -92,8 +92,8 @@ Follow-up infra note:
 
 - the core OpenTofu apply now excludes a few heavier downstream surfaces so the majority of the lab
   can still stand up and validate if one of those slices is flaky
-- the Go setup flow still auto-runs them right after core apply as best-effort follow-up
-  infrastructure:
+- the Go setup flow auto-runs them right after core apply for the `default` cost profile, and runs
+  them for `lower-cost` only when `--enable-default-followups` is supplied:
   - API Management
   - AKS
   - WAF/Application Gateway
@@ -112,8 +112,9 @@ Azure ML note:
 
 Optional proof add-in note:
 
-- three richer follow-up proof lanes now use that same explicit second-pass pattern:
+- four richer follow-up proof lanes now use that same explicit second-pass pattern:
   - `--enable-deployment-path-addin`
+  - `--enable-resource-hijacking-addin`
   - `--enable-compute-control-addin`
   - `--enable-persistence-addin`
 - when enabled, the Go setup flow applies them as their own follow-up infrastructure passes instead
@@ -122,6 +123,8 @@ Optional proof add-in note:
   first-run base lab
 - the intended proof shape for each lane is:
   - deployment-path:
+    Automation runbook + schedule + webhook
+  - resource-hijacking:
     Automation runbook + schedule + webhook
   - compute-control:
     one cleaner user-assigned-identity App Service workload

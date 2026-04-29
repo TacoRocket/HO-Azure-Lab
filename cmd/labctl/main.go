@@ -47,6 +47,36 @@ func writeOutput(path string, payload any, text string) error {
 	return lab.WriteJSON(path, payload)
 }
 
+func mergeSelectorString(existing string, additions []string) string {
+	joined := strings.Join(additions, ",")
+	if joined == "" {
+		return existing
+	}
+	if strings.TrimSpace(existing) == "" {
+		return joined
+	}
+	return existing + "," + joined
+}
+
+func applyRunProfileFile(profileFile string, runProfile, commandSelectors, familySelectors, viewpoint *string) error {
+	if strings.TrimSpace(profileFile) == "" {
+		return nil
+	}
+	definition, err := lab.LoadRunProfileDefinition(profileFile)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(*runProfile) == "" {
+		*runProfile = definition.Profile
+	}
+	*commandSelectors = mergeSelectorString(*commandSelectors, definition.Commands)
+	*familySelectors = mergeSelectorString(*familySelectors, definition.Families)
+	if strings.TrimSpace(definition.Viewpoint) != "" && *viewpoint == "all" {
+		*viewpoint = definition.Viewpoint
+	}
+	return nil
+}
+
 func main() {
 	os.Exit(run())
 }
@@ -83,8 +113,11 @@ func runSetupAzureCommand(args []string) int {
 	sshPublicKeyFile := fs.String("ssh-public-key-file", "", "Path to the SSH public key file.")
 	costProfile := fs.String("cost-profile", "default", "Compute cost profile: default or lower-cost.")
 	aksVMSize := fs.String("aks-vm-size", "Standard_D2s_v3", "AKS VM size.")
+	enableDefaultFollowUps := fs.Bool("enable-default-followups", false, "Enable the default follow-up bundle: API Management, AKS, and WAF/Application Gateway. This is implicit for cost-profile=default and explicit for lower-cost.")
 	enableAzureML := fs.Bool("enable-azure-ml", false, "Enable the separate Azure ML OpenTofu lane.")
 	enableDeploymentPathAddin := fs.Bool("enable-deployment-path-addin", false, "Enable the separate deployment-path proof add-in lane.")
+	enableResourceHijackingAddin := fs.Bool("enable-resource-hijacking-addin", false, "Enable the separate resource-hijacking proof add-in lane.")
+	enableExfilAddin := fs.Bool("enable-exfil-addin", false, "Enable the separate exfil proof add-in lane.")
 	enableComputeControlAddin := fs.Bool("enable-compute-control-addin", false, "Enable the separate compute-control proof add-in lane.")
 	enablePersistenceAddin := fs.Bool("enable-persistence-addin", false, "Enable the separate persistence proof add-in lane.")
 	enableHumanUserViewpoints := fs.Bool("enable-human-user-viewpoints", false, "Best-effort second-phase creation of lab human-user viewpoints.")
@@ -103,8 +136,11 @@ func runSetupAzureCommand(args []string) int {
 		AKSVMSize:                     *aksVMSize,
 		EnableRoleTrustsCanary:        true,
 		EnableDeploymentHistoryCanary: true,
+		EnableDefaultFollowUps:        *enableDefaultFollowUps,
 		EnableAzureML:                 *enableAzureML,
 		EnableDeploymentPathAddin:     *enableDeploymentPathAddin,
+		EnableResourceHijackingAddin:  *enableResourceHijackingAddin,
+		EnableExfilAddin:              *enableExfilAddin,
 		EnableComputeControlAddin:     *enableComputeControlAddin,
 		EnablePersistenceAddin:        *enablePersistenceAddin,
 		EnableHumanUserViewpoints:     *enableHumanUserViewpoints,
@@ -254,6 +290,10 @@ func run() int {
 		infraDir := fs.String("infra-dir", defaultInfraDir(), "Path to the lab infra directory for loading lab outputs.")
 		toolBin := fs.String("tool-bin", "", "Optional path to a built HO-Azure binary. If omitted, labctl builds one from the HO-Azure source tree first.")
 		runID := fs.String("run-id", "live-validation-run", "Run identifier.")
+		runProfile := fs.String("profile", "", "Run profile label. Defaults to release-candidate unless surface or viewpoint selectors narrow the run.")
+		runProfileFile := fs.String("profile-file", "", "Optional JSON file containing a reusable run profile definition.")
+		commandSelectors := fs.String("commands", "", "Comma-separated manifest commands to execute after manifest/viewpoint admission.")
+		familySelectors := fs.String("families", "", "Comma-separated manifest families to execute after manifest/viewpoint admission.")
 		viewpoint := fs.String("viewpoint", "all", "Viewpoint lane to execute.")
 		viewpointCredentials := fs.String("viewpoint-credentials", "", "Optional JSON file for reduced viewpoints.")
 		tenant := fs.String("tenant", "", "Optional Azure tenant ID.")
@@ -268,6 +308,10 @@ func run() int {
 			fmt.Fprintln(os.Stderr, "--manifest and --output-dir are required")
 			return 2
 		}
+		if err := applyRunProfileFile(*runProfileFile, runProfile, commandSelectors, familySelectors, viewpoint); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
 		returnCode, err := lab.RunAzureValidation(lab.AzureRunConfig{
 			ManifestPath:             *manifestPath,
 			OutputDir:                *outputDir,
@@ -275,6 +319,9 @@ func run() int {
 			InfraDir:                 *infraDir,
 			ToolBin:                  *toolBin,
 			RunID:                    *runID,
+			RunProfile:               *runProfile,
+			CommandSelectors:         []string{*commandSelectors},
+			FamilySelectors:          []string{*familySelectors},
 			Viewpoint:                *viewpoint,
 			ViewpointCredentials:     *viewpointCredentials,
 			Tenant:                   *tenant,
@@ -300,6 +347,10 @@ func run() int {
 		infraDir := fs.String("infra-dir", defaultInfraDir(), "Path to the lab infra directory for loading lab outputs.")
 		toolBin := fs.String("tool-bin", "", "Optional path to a built HO-Azure binary. If omitted, labctl builds one from the HO-Azure source tree first.")
 		runID := fs.String("run-id", "live-validation-run", "Run identifier.")
+		runProfile := fs.String("profile", "", "Run profile label. Defaults to release-candidate unless surface or viewpoint selectors narrow the run.")
+		runProfileFile := fs.String("profile-file", "", "Optional JSON file containing a reusable run profile definition.")
+		commandSelectors := fs.String("commands", "", "Comma-separated manifest commands to execute after manifest/viewpoint admission.")
+		familySelectors := fs.String("families", "", "Comma-separated manifest families to execute after manifest/viewpoint admission.")
 		viewpoint := fs.String("viewpoint", "all", "Viewpoint lane to execute.")
 		viewpointCredentials := fs.String("viewpoint-credentials", "", "Optional JSON file for reduced viewpoints.")
 		tenant := fs.String("tenant", "", "Optional Azure tenant ID.")
@@ -314,6 +365,10 @@ func run() int {
 			fmt.Fprintln(os.Stderr, "--manifest and --output-dir are required")
 			return 2
 		}
+		if err := applyRunProfileFile(*runProfileFile, runProfile, commandSelectors, familySelectors, viewpoint); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
 		returnCode, err := lab.RunValidation(lab.AzureRunConfig{
 			ManifestPath:             *manifestPath,
 			OutputDir:                *outputDir,
@@ -321,6 +376,9 @@ func run() int {
 			InfraDir:                 *infraDir,
 			ToolBin:                  *toolBin,
 			RunID:                    *runID,
+			RunProfile:               *runProfile,
+			CommandSelectors:         []string{*commandSelectors},
+			FamilySelectors:          []string{*familySelectors},
 			Viewpoint:                *viewpoint,
 			ViewpointCredentials:     *viewpointCredentials,
 			Tenant:                   *tenant,
@@ -347,6 +405,10 @@ func run() int {
 		infraDir := fs.String("infra-dir", defaultInfraDir(), "Path to the lab infra directory for loading lab outputs.")
 		toolBin := fs.String("tool-bin", "", "Optional path to a built HO-Azure binary. If omitted, labctl builds one from the HO-Azure source tree first.")
 		runID := fs.String("run-id", "live-validation-run", "Run identifier.")
+		runProfile := fs.String("profile", "", "Run profile label. Defaults to release-candidate unless surface or viewpoint selectors narrow the run.")
+		runProfileFile := fs.String("profile-file", "", "Optional JSON file containing a reusable run profile definition.")
+		commandSelectors := fs.String("commands", "", "Comma-separated manifest commands to execute after manifest/viewpoint admission.")
+		familySelectors := fs.String("families", "", "Comma-separated manifest families to execute after manifest/viewpoint admission.")
 		viewpoint := fs.String("viewpoint", "all", "Viewpoint lane to execute.")
 		viewpointCredentials := fs.String("viewpoint-credentials", "", "Optional JSON file for reduced viewpoints.")
 		tenant := fs.String("tenant", "", "Optional Azure tenant ID.")
@@ -361,6 +423,10 @@ func run() int {
 			fmt.Fprintln(os.Stderr, "unsupported provider: "+*provider)
 			return 2
 		}
+		if err := applyRunProfileFile(*runProfileFile, runProfile, commandSelectors, familySelectors, viewpoint); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
 		returnCode, err := lab.RunValidation(lab.AzureRunConfig{
 			ManifestPath:             *manifestPath,
 			OutputDir:                *outputDir,
@@ -368,6 +434,9 @@ func run() int {
 			InfraDir:                 *infraDir,
 			ToolBin:                  *toolBin,
 			RunID:                    *runID,
+			RunProfile:               *runProfile,
+			CommandSelectors:         []string{*commandSelectors},
+			FamilySelectors:          []string{*familySelectors},
 			Viewpoint:                *viewpoint,
 			ViewpointCredentials:     *viewpointCredentials,
 			Tenant:                   *tenant,
