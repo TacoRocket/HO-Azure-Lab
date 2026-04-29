@@ -198,6 +198,16 @@ output "logic_app_name" {
   value       = azurerm_logic_app_workflow.inbound.name
 }
 
+output "logic_app_validation_workflows" {
+  description = "Logic App workflow names used by validation lanes."
+  value = {
+    inbound_request_identity = azurerm_logic_app_workflow.inbound.name
+    persistence_recurrence   = try(azurerm_logic_app_workflow.persistence[0].name, null)
+    no_identity_recurrence   = try(azurerm_logic_app_workflow.no_identity[0].name, null)
+    queue_api_connection     = try(azurerm_api_connection.queue[0].name, null)
+  }
+}
+
 output "container_resources" {
   description = "Container App and Container Instance resources created for the lab."
   value = {
@@ -269,10 +279,13 @@ output "compute_control_addin" {
 output "persistence_addin" {
   description = "Persistence add-in status and resource names when that optional lane is enabled."
   value = {
-    enabled         = var.enable_persistence_addin
-    logic_app_name  = try(azurerm_logic_app_workflow.persistence[0].name, null)
-    trigger_name    = try(azurerm_logic_app_trigger_recurrence.persistence[0].name, null)
-    action_name     = try(azurerm_logic_app_action_http.persistence[0].name, null)
+    enabled                    = var.enable_persistence_addin
+    logic_app_name             = try(azurerm_logic_app_workflow.persistence[0].name, null)
+    trigger_name               = try(azurerm_logic_app_trigger_recurrence.persistence[0].name, null)
+    action_name                = try(azurerm_logic_app_action_http.persistence[0].name, null)
+    connector_action_name      = try(azurerm_logic_app_action_custom.persistence_queue_connector[0].name, null)
+    queue_api_connection_name  = try(azurerm_api_connection.queue[0].name, null)
+    no_identity_logic_app_name = try(azurerm_logic_app_workflow.no_identity[0].name, null)
   }
 }
 

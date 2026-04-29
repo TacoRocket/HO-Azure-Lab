@@ -185,6 +185,137 @@ func TestBuildSurfacePlanAndInvocationStayTruthFirst(t *testing.T) {
 	}
 }
 
+func TestBuildSurfacePlanAllowsManifestPinnedFamilyGroupCommand(t *testing.T) {
+	manifest := Manifest{
+		Viewpoints: map[string]ViewpointDefinition{
+			"admin": {Required: true},
+		},
+		Surfaces: SurfaceCatalog{
+			Families: map[string]SurfaceEntry{
+				"dcr": {
+					Status:       "covered",
+					GroupCommand: "evasion",
+					Viewpoints: map[string]ViewpointStatus{
+						"admin": {Status: "covered"},
+					},
+				},
+			},
+		},
+	}
+	tasks := BuildSurfacePlan(manifest, SurfaceSnapshot{}, []string{"admin"})
+	if len(tasks) != 1 {
+		t.Fatalf("expected one task, got %#v", tasks)
+	}
+	if tasks[0].GroupCommand != "evasion" || tasks[0].Subcommand != "dcr" {
+		t.Fatalf("expected evasion dcr invocation task, got %#v", tasks[0])
+	}
+}
+
+func TestBuildSurfacePlanAllowsManifestPinnedFamilySubcommand(t *testing.T) {
+	manifest := Manifest{
+		Viewpoints: map[string]ViewpointDefinition{
+			"admin": {Required: true},
+		},
+		Surfaces: SurfaceCatalog{
+			Families: map[string]SurfaceEntry{
+				"exfil-diagnostic-settings": {
+					Status:       "covered",
+					GroupCommand: "exfil",
+					Subcommand:   "diagnostic-settings",
+					Viewpoints: map[string]ViewpointStatus{
+						"admin": {Status: "covered"},
+					},
+				},
+			},
+		},
+	}
+	tasks := BuildSurfacePlan(manifest, SurfaceSnapshot{}, []string{"admin"})
+	if len(tasks) != 1 {
+		t.Fatalf("expected one task, got %#v", tasks)
+	}
+	if tasks[0].GroupCommand != "exfil" || tasks[0].Subcommand != "diagnostic-settings" {
+		t.Fatalf("expected exfil diagnostic-settings invocation task, got %#v", tasks[0])
+	}
+}
+
+func TestBuildRunProfileNarrowsSurfacesWithoutDroppingViewpointTruth(t *testing.T) {
+	manifest, err := ScaffoldManifest(hoAzureDir, "excepted", "bootstrap_pending", "truth-first-bootstrap")
+	if err != nil {
+		t.Fatalf("scaffold manifest: %v", err)
+	}
+	surface, err := DeriveSurface(hoAzureDir)
+	if err != nil {
+		t.Fatalf("derive surface: %v", err)
+	}
+
+	profile, tasks, err := BuildRunProfile(
+		manifest,
+		surface,
+		"targeted-test",
+		"targeted-command",
+		[]string{"admin"},
+		[]string{"whoami"},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("build profile: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("expected one selected task, got %#v", tasks)
+	}
+	if tasks[0].SurfaceKind != "commands" || tasks[0].SurfaceName != "whoami" || tasks[0].Viewpoint != "admin" {
+		t.Fatalf("unexpected selected task: %#v", tasks[0])
+	}
+	if !slices.Equal(profile.RequiredViewpoints, []string{"admin", "dev", "lower-privilege"}) {
+		t.Fatalf("expected all manifest-required viewpoints to stay visible, got %#v", profile.RequiredViewpoints)
+	}
+	if !slices.Equal(profile.SelectedViewpoints, []string{"admin"}) {
+		t.Fatalf("expected selected viewpoint to be recorded, got %#v", profile.SelectedViewpoints)
+	}
+	if profile.SelectedCount != 1 || profile.SkippedCount == 0 {
+		t.Fatalf("expected selected and skipped counts, got %#v", profile)
+	}
+
+	foundSkippedReducedViewpoint := false
+	foundSkippedSurface := false
+	for _, skipped := range profile.Skipped {
+		if skipped.SurfaceKind == "commands" && skipped.SurfaceName == "whoami" && skipped.Viewpoint == "dev" && skipped.Reason == "viewpoint_not_selected" {
+			foundSkippedReducedViewpoint = true
+		}
+		if skipped.SurfaceKind == "commands" && skipped.SurfaceName == "acr" && skipped.Viewpoint == "admin" && skipped.Reason == "surface_not_selected" {
+			foundSkippedSurface = true
+		}
+	}
+	if !foundSkippedReducedViewpoint {
+		t.Fatalf("expected skipped reduced viewpoint for selected command, got %#v", profile.Skipped)
+	}
+	if !foundSkippedSurface {
+		t.Fatalf("expected skipped admitted surface for selected viewpoint, got %#v", profile.Skipped)
+	}
+}
+
+func TestBuildRunProfileRejectsExceptedOrUncoveredSelections(t *testing.T) {
+	manifest, err := ScaffoldManifest(hoAzureDir, "excepted", "bootstrap_pending", "truth-first-bootstrap")
+	if err != nil {
+		t.Fatalf("scaffold manifest: %v", err)
+	}
+	surface, err := DeriveSurface(hoAzureDir)
+	if err != nil {
+		t.Fatalf("derive surface: %v", err)
+	}
+
+	if _, _, err := BuildRunProfile(manifest, surface, "bad-test", "targeted-command", []string{"admin"}, []string{"devops"}, nil); err == nil {
+		t.Fatalf("expected excepted command selector to fail")
+	}
+
+	whoami := manifest.Surfaces.Commands["whoami"]
+	whoami.Viewpoints["dev"] = ViewpointStatus{Status: "excepted", ReasonCode: "explicit_exception"}
+	manifest.Surfaces.Commands["whoami"] = whoami
+	if _, _, err := BuildRunProfile(manifest, surface, "bad-viewpoint-test", "targeted-command", []string{"dev"}, []string{"whoami"}, nil); err == nil {
+		t.Fatalf("expected selector with no covered selected viewpoint to fail")
+	}
+}
+
 func TestValidateLiveRunFindsMissingContractField(t *testing.T) {
 	runDir := t.TempDir()
 	runResult := RunResult{
@@ -2383,11 +2514,15 @@ func TestRunValidationExecutesFullGoFlow(t *testing.T) {
 	outputDir := t.TempDir()
 	var progress bytes.Buffer
 	exitCode, err := RunValidation(AzureRunConfig{
-		ManifestPath:   manifestPath,
-		OutputDir:      outputDir,
-		HOAzureDir:     hoAzureDir,
-		ToolBin:        toolPath,
-		RunID:          "full-go-test",
+		ManifestPath: manifestPath,
+		OutputDir:    outputDir,
+		HOAzureDir:   hoAzureDir,
+		ToolBin:      toolPath,
+		RunID:        "full-go-test",
+		RunProfile:   "targeted-command",
+		CommandSelectors: []string{
+			"whoami",
+		},
 		Viewpoint:      "all",
 		ProgressWriter: &progress,
 	})
@@ -2405,13 +2540,29 @@ func TestRunValidationExecutesFullGoFlow(t *testing.T) {
 	if runResults.FinalOutcome != "pass" {
 		t.Fatalf("expected pass final outcome, got %#v", runResults.FinalOutcome)
 	}
+	if runResults.Artifacts["run_profile"].Path != "artifacts/run-profile.json" {
+		t.Fatalf("expected run profile artifact record, got %#v", runResults.Artifacts)
+	}
+	runProfile := RunProfileArtifact{}
+	if err := LoadJSON(filepath.Join(outputDir, "artifacts", "run-profile.json"), &runProfile); err != nil {
+		t.Fatalf("load run profile: %v", err)
+	}
+	if runProfile.Profile != "targeted-command" || runProfile.SelectedCount != 1 {
+		t.Fatalf("unexpected run profile: %#v", runProfile)
+	}
 
 	summary := ValidationSummary{}
 	if err := LoadJSON(filepath.Join(outputDir, "artifacts", "completion-summary.json"), &summary); err != nil {
 		t.Fatalf("load completion summary: %v", err)
 	}
-	if !summary.ReleaseReady {
-		t.Fatalf("expected release-ready completion summary, got %#v", summary)
+	if summary.CompletionStatus != "complete" {
+		t.Fatalf("expected complete targeted-run summary, got %#v", summary)
+	}
+	if summary.ReleaseReady {
+		t.Fatalf("targeted run should not be release-ready, got %#v", summary)
+	}
+	if summary.Summary.RunProfile == nil || summary.Summary.RunProfile.ReleaseGate {
+		t.Fatalf("expected non-release-gate run profile summary, got %#v", summary.Summary.RunProfile)
 	}
 
 	if _, err := os.Stat(filepath.Join(outputDir, "artifacts", "live-validation-summary.json")); err != nil {
@@ -2424,11 +2575,14 @@ func TestRunValidationExecutesFullGoFlow(t *testing.T) {
 	if !strings.Contains(progressText, "Starting Azure validation flow...") {
 		t.Fatalf("expected validation start progress, got %q", progressText)
 	}
+	if !strings.Contains(progressText, "check 1/1: commands whoami admin") {
+		t.Fatalf("expected selected check progress counter, got %q", progressText)
+	}
 	if !strings.Contains(progressText, "Running live payload checks...") {
 		t.Fatalf("expected live payload progress, got %q", progressText)
 	}
-	if !strings.Contains(progressText, "Azure validation succeeded.") {
-		t.Fatalf("expected success progress, got %q", progressText)
+	if !strings.Contains(progressText, "Azure validation completed for the selected run profile.") {
+		t.Fatalf("expected selected-profile completion progress, got %q", progressText)
 	}
 }
 
@@ -2579,6 +2733,57 @@ func TestSetupViewpointSessionUsesSystemTempDirForAzureConfigDir(t *testing.T) {
 	}
 	if !strings.Contains(progressText, "[done] az account set (dev viewpoint) -> status=pass") {
 		t.Fatalf("expected az account set progress completion, got %q", progressText)
+	}
+}
+
+func TestEnvWithOverridesReplacesExistingKeys(t *testing.T) {
+	originalAzureConfigDir, hadAzureConfigDir := os.LookupEnv("AZURE_CONFIG_DIR")
+	originalProvider, hadProvider := os.LookupEnv("AZUREFOX_PROVIDER")
+	if err := os.Setenv("AZURE_CONFIG_DIR", "/tmp/original-azure"); err != nil {
+		t.Fatalf("set AZURE_CONFIG_DIR: %v", err)
+	}
+	if err := os.Setenv("AZUREFOX_PROVIDER", "fixture"); err != nil {
+		t.Fatalf("set AZUREFOX_PROVIDER: %v", err)
+	}
+	defer func() {
+		if hadAzureConfigDir {
+			_ = os.Setenv("AZURE_CONFIG_DIR", originalAzureConfigDir)
+		} else {
+			_ = os.Unsetenv("AZURE_CONFIG_DIR")
+		}
+		if hadProvider {
+			_ = os.Setenv("AZUREFOX_PROVIDER", originalProvider)
+		} else {
+			_ = os.Unsetenv("AZUREFOX_PROVIDER")
+		}
+	}()
+
+	env := envWithOverrides("AZURE_CONFIG_DIR=/tmp/reduced-viewpoint", "AZUREFOX_PROVIDER=azure")
+	seen := map[string]int{}
+	for _, entry := range env {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		if key == "AZURE_CONFIG_DIR" || key == "AZUREFOX_PROVIDER" {
+			seen[key]++
+			switch key {
+			case "AZURE_CONFIG_DIR":
+				if value != "/tmp/reduced-viewpoint" {
+					t.Fatalf("expected replaced AZURE_CONFIG_DIR, got %q", value)
+				}
+			case "AZUREFOX_PROVIDER":
+				if value != "azure" {
+					t.Fatalf("expected replaced AZUREFOX_PROVIDER, got %q", value)
+				}
+			}
+		}
+	}
+	if seen["AZURE_CONFIG_DIR"] != 1 {
+		t.Fatalf("expected exactly one AZURE_CONFIG_DIR entry, got %d in %#v", seen["AZURE_CONFIG_DIR"], env)
+	}
+	if seen["AZUREFOX_PROVIDER"] != 1 {
+		t.Fatalf("expected exactly one AZUREFOX_PROVIDER entry, got %d in %#v", seen["AZUREFOX_PROVIDER"], env)
 	}
 }
 
@@ -2805,14 +3010,21 @@ func TestExecuteTaskAllowsArtifactActivityToKeepRunAlive(t *testing.T) {
 	}
 }
 
-func TestExecuteTaskCapturesJSONAndTableArtifacts(t *testing.T) {
+func TestExecuteTaskCapturesJSONTableAndCSVArtifacts(t *testing.T) {
 	if os.Getenv("GO_WANT_EXECUTE_TASK_ARTIFACT_HELPER") == "1" {
 		outputFormat := ""
+		outdir := ""
 		for i, arg := range os.Args {
 			if arg == "--output" && i+1 < len(os.Args) {
 				outputFormat = os.Args[i+1]
-				break
 			}
+			if arg == "--outdir" && i+1 < len(os.Args) {
+				outdir = os.Args[i+1]
+			}
+		}
+		if outdir == "" {
+			fmt.Fprintln(os.Stderr, "missing --outdir")
+			os.Exit(3)
 		}
 		switch outputFormat {
 		case "json":
@@ -2820,6 +3032,10 @@ func TestExecuteTaskCapturesJSONAndTableArtifacts(t *testing.T) {
 			os.Exit(0)
 		case "table":
 			fmt.Println("TENANT")
+			fmt.Println("tenant-123")
+			os.Exit(0)
+		case "csv":
+			fmt.Println("tenant_id")
 			fmt.Println("tenant-123")
 			os.Exit(0)
 		default:
@@ -2836,7 +3052,7 @@ func TestExecuteTaskCapturesJSONAndTableArtifacts(t *testing.T) {
 			Viewpoint:    "admin",
 			GroupCommand: "whoami",
 		},
-		[]string{os.Args[0], "-test.run=TestExecuteTaskCapturesJSONAndTableArtifacts", "--"},
+		[]string{os.Args[0], "-test.run=TestExecuteTaskCapturesJSONTableAndCSVArtifacts", "--"},
 		t.TempDir(),
 		outputDir,
 		"tenant-123",
@@ -2857,11 +3073,17 @@ func TestExecuteTaskCapturesJSONAndTableArtifacts(t *testing.T) {
 	if entry.TablePath == "" {
 		t.Fatalf("expected table artifact path")
 	}
+	if entry.CSVPath == "" {
+		t.Fatalf("expected CSV artifact path")
+	}
 	if _, err := os.Stat(filepath.Join(outputDir, filepath.FromSlash(entry.PayloadPath))); err != nil {
 		t.Fatalf("expected payload artifact on disk: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(outputDir, filepath.FromSlash(entry.TablePath))); err != nil {
 		t.Fatalf("expected table artifact on disk: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, filepath.FromSlash(entry.CSVPath))); err != nil {
+		t.Fatalf("expected CSV artifact on disk: %v", err)
 	}
 }
 

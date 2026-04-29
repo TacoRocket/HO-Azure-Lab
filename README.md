@@ -92,7 +92,15 @@ The two main operator-facing flags are:
 - `--cost-profile`
   choose either `default` or `lower-cost`
 
-Those are the only setup choices the public docs should emphasize first.
+The `default` cost profile keeps the expected fuller setup path: after core apply, setup also runs
+the default follow-up bundle for API Management, AKS, and WAF/Application Gateway.
+
+The `lower-cost` profile starts with the lower-cost core lab and does not run that default follow-up
+bundle unless you explicitly request it:
+
+```bash
+labctl setup-azure-environment --cost-profile lower-cost --enable-default-followups
+```
 
 Anything deeper, niche, or maintainer-oriented should stay after the main operator choices instead
 of being mixed into the top of the setup story.
@@ -106,10 +114,13 @@ One deeper setup switch now stays intentionally separate:
   the default lab apply leaves AML off so AML-specific naming, provisioning, or timeout problems do
   not make the main OpenTofu deploy harder to troubleshoot
 
-There are also three optional proof add-ins that follow the same separate-lane pattern:
+There are also four optional proof add-ins that follow the same separate-lane pattern:
 
 - `--enable-deployment-path-addin`
   turns on a small Azure Automation execution path for richer `chains deployment-path` proof
+- `--enable-resource-hijacking-addin`
+  turns on a small Azure Automation runbook, schedule, and webhook path for
+  `resourcehijacking automation` proof
 - `--enable-compute-control-addin`
   turns on a cleaner single-identity App Service proof workload for `compute-control`
 - `--enable-persistence-addin`
@@ -130,7 +141,8 @@ If you pass nothing, the default setup is:
 That means the normal first-run path uses the larger `Standard_D2s_v3` VM and VMSS sizes.
 
 If you want the lower-cost path after quota approval, use the same command shape and change only the
-cost profile and, if needed, the region:
+cost profile and, if needed, the region. This starts the lower-cost core lab without the default
+API Management, AKS, and WAF/Application Gateway follow-up bundle:
 
 ```bash
 labctl setup-environment --provider azure --cost-profile lower-cost --location centralus
@@ -140,6 +152,12 @@ or:
 
 ```bash
 labctl setup-azure-environment --cost-profile lower-cost --location centralus
+```
+
+If you need the default follow-up bundle after that lower-cost core setup, enable it explicitly:
+
+```bash
+labctl setup-azure-environment --cost-profile lower-cost --location centralus --enable-default-followups
 ```
 
 The setup flow writes generated OpenTofu inputs for that run and then uses those values when it
@@ -163,6 +181,8 @@ The optional proof add-ins follow that same setup model:
 
 ```bash
 labctl setup-azure-environment --enable-deployment-path-addin
+labctl setup-azure-environment --enable-resource-hijacking-addin
+labctl setup-azure-environment --enable-exfil-addin
 labctl setup-azure-environment --enable-compute-control-addin
 labctl setup-azure-environment --enable-persistence-addin
 ```
@@ -171,6 +191,8 @@ Those lanes are meant to enrich later grouped-family proof, not to redefine the 
 
 - deployment-path add-in:
   a lightweight Automation runbook, schedule, and webhook path
+- resource-hijacking add-in:
+  a lightweight Automation runbook, schedule, and webhook path for family-specific hijack proof
 - compute-control add-in:
   a cleaner user-assigned-identity App Service workload
 - persistence add-in:
@@ -340,12 +362,21 @@ Planned lab shape:
   one webhook
   - why this is not on by default:
     it is meant to enrich grouped-family proof, not to make the base lab harder to stand up
+- One optional resource-hijacking add-in with:
+  one Automation runbook
+  one schedule
+  one webhook
+  - why this is not on by default:
+    it is a family-specific proof lane and should stay isolated from the base apply until needed
 - One optional compute-control add-in with:
   one extra user-assigned-identity App Service workload
   - why this is not on by default:
     it is a cleaner follow-up proof surface for grouped-family work, not a required first-run base
 - One optional persistence add-in with:
-  one recurrence-driven Logic App workflow
+  one recurrence-driven Logic App workflow with a managed identity
+  one Storage Queue API connection and connector-backed Logic App action for connector-reference
+  validation
+  one recurrence-driven Logic App workflow without identity posture for ranking comparison
   - why this is not on by default:
     it is a later persistence proof lane and should stay isolated from the base apply until needed
 - One public DNS zone plus one private DNS zone with a registration-enabled VNet link

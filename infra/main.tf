@@ -180,7 +180,7 @@ module "role_trusts_canary" {
   api_app_role_id          = local.roletrust_api_app_role_id
   microsoft_graph_app_id   = data.azuread_application_published_app_ids.well_known.result.MicrosoftGraph
   ops_resource_group_id    = azurerm_resource_group.ops.id
-  github_federated_subject = "repo:TacoRocket/HO-Azure:ref:refs/heads/main"
+  github_federated_subject = "repo:example-org/ho-azure:ref:refs/heads/main"
 }
 
 resource "azurerm_linux_virtual_machine" "vm_web" {
@@ -342,6 +342,54 @@ resource "azurerm_storage_container" "lab_proof" {
   name                  = local.proof_container_name
   storage_account_id    = azurerm_storage_account.public.id
   container_access_type = "blob"
+}
+
+resource "azurerm_storage_blob" "vm_extension_script" {
+  name                   = local.vm_extension_script_name
+  storage_account_name   = azurerm_storage_account.public.name
+  storage_container_name = azurerm_storage_container.lab_proof.name
+  type                   = "Block"
+  content_type           = "text/x-shellscript"
+  source_content         = <<-SCRIPT
+    #!/usr/bin/env sh
+    set -eu
+    printf 'ho-azure-lab-vm-extension-proof %s\n' "$${1:-unknown}" > /tmp/ho-azure-lab-vm-extension-proof.txt
+  SCRIPT
+}
+
+resource "azurerm_virtual_machine_extension" "vm_web_config_bootstrap" {
+  name                       = local.vm_web_extension_name
+  virtual_machine_id         = azurerm_linux_virtual_machine.vm_web.id
+  publisher                  = "Microsoft.Azure.Extensions"
+  type                       = "CustomScript"
+  type_handler_version       = "2.1"
+  auto_upgrade_minor_version = true
+  tags                       = local.tags
+
+  settings = jsonencode({
+    commandToExecute = "sh ${local.vm_extension_script_name} vm-web-01"
+    fileUris = [
+      "${azurerm_storage_account.public.primary_blob_endpoint}${azurerm_storage_container.lab_proof.name}/${azurerm_storage_blob.vm_extension_script.name}",
+    ]
+    timestamp = 2026042801
+  })
+}
+
+resource "azurerm_virtual_machine_scale_set_extension" "vmss_api_maintenance_script" {
+  name                         = local.vmss_api_extension_name
+  virtual_machine_scale_set_id = azurerm_linux_virtual_machine_scale_set.vmss_api.id
+  publisher                    = "Microsoft.Azure.Extensions"
+  type                         = "CustomScript"
+  type_handler_version         = "2.1"
+  auto_upgrade_minor_version   = true
+
+  settings = jsonencode({
+    commandToExecute = "sh ${local.vm_extension_script_name} vmss-api"
+    fileUris = [
+      "${azurerm_storage_account.public.primary_blob_endpoint}${azurerm_storage_container.lab_proof.name}/${azurerm_storage_blob.vm_extension_script.name}",
+    ]
+    timestamp = 2026042801
+  })
 }
 
 module "deployment_history_canary" {
@@ -530,13 +578,19 @@ resource "azurerm_eventgrid_event_subscription" "function_storage_queue" {
   name  = local.event_grid_subscription_name
   scope = azurerm_storage_account.function.id
 
-  included_event_types = ["Microsoft.Storage.BlobCreated"]
+  included_event_types  = ["Microsoft.Storage.BlobCreated"]
   event_delivery_schema = "EventGridSchema"
 
   storage_queue_endpoint {
     storage_account_id = azurerm_storage_account.function.id
     queue_name         = azurerm_storage_queue.event_grid.name
   }
+}
+
+data "archive_file" "public_app_webjobs" {
+  type        = "zip"
+  source_dir  = "${path.module}/webjobs/public-app"
+  output_path = "${path.module}/../.generated/public-app-webjobs.zip"
 }
 
 resource "azurerm_linux_web_app" "public" {
@@ -554,7 +608,7 @@ resource "azurerm_linux_web_app" "public" {
   }
 
   site_config {
-    always_on           = false
+    always_on           = true
     ftps_state          = "Disabled"
     minimum_tls_version = "1.2"
 
@@ -564,9 +618,16 @@ resource "azurerm_linux_web_app" "public" {
   }
 
   app_settings = {
-    API_BASE_URL = "https://example.internal/api"
-    DB_PASSWORD  = "HO-Azure-Lab-PlainText-Only"
+    API_BASE_URL                                     = "https://example.internal/api"
+    APPLICATIONINSIGHTS_CONNECTION_STRING            = azurerm_application_insights.app_telemetry.connection_string
+    ApplicationInsights__Sampling__Percentage        = "25"
+    ApplicationInsights__TelemetryProcessor__Request = "HealthCheckFilter"
+    DB_PASSWORD                                      = "HO-Azure-Lab-PlainText-Only"
+    Logging__ApplicationInsights__LogLevel__Default  = "Warning"
+    WEBSITE_SKIP_RUNNING_KUDUAGENT                   = "false"
   }
+
+  zip_deploy_file = data.archive_file.public_app_webjobs.output_path
 }
 
 resource "azurerm_linux_web_app" "empty" {
@@ -655,7 +716,9 @@ resource "azurerm_linux_function_app" "orders" {
   }
 
   app_settings = {
-    PAYMENT_API_KEY = "@Microsoft.KeyVault(VaultName=${azurerm_key_vault.open.name};SecretName=${azurerm_key_vault_secret.payment_api_key.name})"
+    APPINSIGHTS_INSTRUMENTATIONKEY                                                   = azurerm_application_insights.app_telemetry.instrumentation_key
+    AzureFunctionsJobHost__logging__applicationInsights__samplingSettings__isEnabled = "true"
+    PAYMENT_API_KEY                                                                  = "@Microsoft.KeyVault(VaultName=${azurerm_key_vault.open.name};SecretName=${azurerm_key_vault_secret.payment_api_key.name})"
   }
 }
 
@@ -729,6 +792,73 @@ resource "azurerm_logic_app_action_http" "persistence" {
   })
 }
 
+data "azurerm_managed_api" "azurequeues" {
+  count    = var.enable_persistence_addin ? 1 : 0
+  name     = "azurequeues"
+  location = azurerm_resource_group.workload.location
+}
+
+resource "azurerm_api_connection" "queue" {
+  count               = var.enable_persistence_addin ? 1 : 0
+  name                = local.logic_app_queue_connection_name
+  resource_group_name = azurerm_resource_group.workload.name
+  managed_api_id      = data.azurerm_managed_api.azurequeues[0].id
+  display_name        = "HO-Azure lab queue connector"
+  parameter_values = {
+    storageaccount = azurerm_storage_account.function.name
+    sharedkey      = azurerm_storage_account.function.primary_access_key
+  }
+  tags = local.tags
+}
+
+resource "azurerm_logic_app_action_custom" "persistence_queue_connector" {
+  count        = var.enable_persistence_addin ? 1 : 0
+  name         = "list_queue_messages"
+  logic_app_id = azurerm_logic_app_workflow.persistence[0].id
+  body = jsonencode({
+    type = "ApiConnection"
+    inputs = {
+      host = {
+        connection = {
+          name = azurerm_api_connection.queue[0].id
+        }
+      }
+      method = "get"
+      path   = "/messages"
+    }
+  })
+}
+
+resource "azurerm_logic_app_workflow" "no_identity" {
+  count               = var.enable_persistence_addin ? 1 : 0
+  name                = local.logic_app_no_identity_name
+  location            = azurerm_resource_group.workload.location
+  resource_group_name = azurerm_resource_group.workload.name
+  enabled             = true
+  tags                = local.tags
+}
+
+resource "azurerm_logic_app_trigger_recurrence" "no_identity" {
+  count        = var.enable_persistence_addin ? 1 : 0
+  name         = "hourly"
+  logic_app_id = azurerm_logic_app_workflow.no_identity[0].id
+  frequency    = "Hour"
+  interval     = 12
+  time_zone    = "UTC"
+  start_time   = "2030-01-01T00:00:00Z"
+}
+
+resource "azurerm_logic_app_action_http" "no_identity" {
+  count        = var.enable_persistence_addin ? 1 : 0
+  name         = "notify"
+  logic_app_id = azurerm_logic_app_workflow.no_identity[0].id
+  method       = "POST"
+  uri          = "https://example.org/no-identity-logic-app-proof"
+  body = jsonencode({
+    source = "ho-azure-lab-no-identity"
+  })
+}
+
 resource "azurerm_log_analytics_workspace" "container_apps" {
   name                = local.log_analytics_name
   location            = azurerm_resource_group.workload.location
@@ -736,6 +866,56 @@ resource "azurerm_log_analytics_workspace" "container_apps" {
   retention_in_days   = 30
   sku                 = "PerGB2018"
   tags                = local.tags
+}
+
+resource "azurerm_application_insights" "app_telemetry" {
+  name                = local.app_insights_app_name
+  location            = azurerm_resource_group.workload.location
+  resource_group_name = azurerm_resource_group.workload.name
+  application_type    = "web"
+  workspace_id        = azurerm_log_analytics_workspace.container_apps.id
+  tags                = local.tags
+}
+
+resource "azurerm_monitor_data_collection_rule" "linux_vm" {
+  name                = local.monitor_dcr_name
+  location            = azurerm_resource_group.workload.location
+  resource_group_name = azurerm_resource_group.workload.name
+  description         = "HO-Azure lab DCR with streams, data flow, destination, transformation, and VM association."
+  tags                = local.tags
+
+  destinations {
+    log_analytics {
+      name                  = "la-workload"
+      workspace_resource_id = azurerm_log_analytics_workspace.container_apps.id
+    }
+  }
+
+  data_sources {
+    performance_counter {
+      name                          = "linux-perf"
+      streams                       = ["Microsoft-Perf"]
+      sampling_frequency_in_seconds = 60
+      counter_specifiers = [
+        "\\Processor(_Total)\\% Processor Time",
+        "\\Memory\\Available MBytes",
+      ]
+    }
+  }
+
+  data_flow {
+    streams       = ["Microsoft-Perf"]
+    destinations  = ["la-workload"]
+    output_stream = "Microsoft-Perf"
+    transform_kql = "source | where CounterName != ''"
+  }
+}
+
+resource "azurerm_monitor_data_collection_rule_association" "linux_vm" {
+  name                    = local.monitor_dcr_association_name
+  target_resource_id      = azurerm_linux_virtual_machine.vm_web.id
+  data_collection_rule_id = azurerm_monitor_data_collection_rule.linux_vm.id
+  description             = "HO-Azure lab DCR association for VM-side association discovery."
 }
 
 resource "azurerm_container_app_environment" "public" {
@@ -778,6 +958,125 @@ resource "azurerm_container_app" "public_api" {
       image  = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
       cpu    = 0.5
       memory = "1.0Gi"
+    }
+  }
+}
+
+resource "azurerm_container_app_job" "manual_reconcile" {
+  name                         = local.container_app_job_manual_name
+  location                     = azurerm_resource_group.workload.location
+  resource_group_name          = azurerm_resource_group.workload.name
+  container_app_environment_id = azurerm_container_app_environment.public.id
+  replica_retry_limit          = 1
+  replica_timeout_in_seconds   = 300
+  tags                         = local.tags
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  manual_trigger_config {
+    parallelism              = 1
+    replica_completion_count = 1
+  }
+
+  template {
+    container {
+      name    = "manual-reconcile"
+      image   = "mcr.microsoft.com/azurelinux/base/core:3.0"
+      command = ["/bin/sh"]
+      args    = ["-c", "echo manual-reconcile"]
+      cpu     = 0.25
+      memory  = "0.5Gi"
+    }
+  }
+}
+
+resource "azurerm_container_app_job" "scheduled_reconcile" {
+  name                         = local.container_app_job_schedule_name
+  location                     = azurerm_resource_group.workload.location
+  resource_group_name          = azurerm_resource_group.workload.name
+  container_app_environment_id = azurerm_container_app_environment.public.id
+  replica_retry_limit          = 2
+  replica_timeout_in_seconds   = 600
+  tags                         = local.tags
+
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.ua_app.id]
+  }
+
+  schedule_trigger_config {
+    cron_expression          = "0 3 * * *"
+    parallelism              = 1
+    replica_completion_count = 1
+  }
+
+  template {
+    container {
+      name    = "scheduled-reconcile"
+      image   = "mcr.microsoft.com/azurelinux/base/core:3.0"
+      command = ["/bin/sh"]
+      args    = ["-c", "echo scheduled-reconcile"]
+      cpu     = 0.25
+      memory  = "0.5Gi"
+    }
+  }
+}
+
+resource "azurerm_container_app_job" "queue_drain" {
+  name                         = local.container_app_job_event_name
+  location                     = azurerm_resource_group.workload.location
+  resource_group_name          = azurerm_resource_group.workload.name
+  container_app_environment_id = azurerm_container_app_environment.public.id
+  replica_retry_limit          = 3
+  replica_timeout_in_seconds   = 600
+  tags                         = local.tags
+
+  identity {
+    type         = "SystemAssigned, UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.ua_app.id]
+  }
+
+  secret {
+    name  = "queue-connection"
+    value = azurerm_storage_account.function.primary_connection_string
+  }
+
+  event_trigger_config {
+    parallelism              = 2
+    replica_completion_count = 1
+
+    scale {
+      min_executions              = 0
+      max_executions              = 1
+      polling_interval_in_seconds = 300
+
+      rules {
+        name             = "incoming-events"
+        custom_rule_type = "azure-queue"
+        metadata = {
+          accountName = azurerm_storage_account.function.name
+          queueLength = "5"
+          queueName   = azurerm_storage_queue.event_grid.name
+        }
+
+        authentication {
+          secret_name       = "queue-connection"
+          trigger_parameter = "connection"
+        }
+      }
+    }
+  }
+
+  template {
+    container {
+      name    = "queue-drain"
+      image   = "mcr.microsoft.com/azurelinux/base/core:3.0"
+      command = ["/bin/sh"]
+      args    = ["-c", "echo queue-drain"]
+      cpu     = 0.25
+      memory  = "0.5Gi"
     }
   }
 }
@@ -1095,10 +1394,10 @@ resource "azurerm_automation_runbook" "deployment_path" {
   log_verbose             = true
   log_progress            = true
   description             = "Optional deployment-path proof add-in runbook."
-  content = <<-EOT
+  content                 = <<-EOT
     Write-Output "HO-Azure-Lab deployment-path proof runbook"
   EOT
-  tags = local.tags
+  tags                    = local.tags
 }
 
 resource "azurerm_automation_schedule" "deployment_path" {

@@ -91,6 +91,20 @@
           }
         }
       },
+      "appinsights": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
       "application-gateway": {
         "status": "covered",
         "viewpoints": {
@@ -175,6 +189,20 @@
           }
         }
       },
+      "container-apps-jobs": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
       "container-instances": {
         "status": "covered",
         "viewpoints": {
@@ -217,6 +245,20 @@
           }
         }
       },
+      "dcr": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
       "devops": {
         "status": "excepted",
         "reason_code": "manual_setup_not_done",
@@ -241,6 +283,20 @@
             "status": "excepted",
             "reason_code": "manual_setup_not_done",
             "reason_detail": "The DevOps canary templates are tracked here, but the standing Azure DevOps org, project, repo, service connection, and variable group path is not wired yet in this lab."
+          }
+        }
+      },
+      "diagnostic-settings": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
           }
         }
       },
@@ -300,7 +356,35 @@
           }
         }
       },
+      "eventhubs": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
       "functions": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "foundcredentials": {
         "status": "covered",
         "viewpoints": {
           "admin": {
@@ -366,6 +450,21 @@
       },
       "logic-apps": {
         "status": "covered",
+        "group_command": "resourcehijacking",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "loganalytics": {
+        "status": "covered",
         "viewpoints": {
           "admin": {
             "status": "covered"
@@ -379,6 +478,20 @@
         }
       },
       "managed-identities": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "monitoring-sinks": {
         "status": "covered",
         "viewpoints": {
           "admin": {
@@ -574,7 +687,35 @@
           }
         }
       },
+      "vm-extensions": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
       "vmss": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "webjobs": {
         "status": "covered",
         "viewpoints": {
           "admin": {
@@ -618,8 +759,39 @@
       }
     },
     "families": {
+      "appinsights": {
+        "status": "covered",
+        "group_command": "evasion",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "api-mgmt": {
+        "status": "covered",
+        "group_command": "resourcehijacking",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
       "automation": {
         "status": "covered",
+        "group_command": "resourcehijacking",
         "viewpoints": {
           "admin": {
             "status": "covered"
@@ -633,6 +805,20 @@
         }
       },
       "compute-control": {
+        "status": "covered",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "container-apps-jobs": {
         "status": "covered",
         "viewpoints": {
           "admin": {
@@ -674,6 +860,116 @@
           }
         }
       },
+      "dcr": {
+        "status": "covered",
+        "group_command": "evasion",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "evasion-diagnostic-settings": {
+        "status": "covered",
+        "group_command": "evasion",
+        "subcommand": "diagnostic-settings",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "event-grid": {
+        "status": "covered",
+        "group_command": "resourcehijacking",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "exfil-diagnostic-settings": {
+        "status": "covered",
+        "group_command": "exfil",
+        "subcommand": "diagnostic-settings",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "exfil-eventhubs": {
+        "status": "covered",
+        "group_command": "exfil",
+        "subcommand": "eventhubs",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "exfil-loganalytics": {
+        "status": "covered",
+        "group_command": "exfil",
+        "subcommand": "loganalytics",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "exfil-logic-apps": {
+        "status": "covered",
+        "group_command": "exfil",
+        "subcommand": "logic-apps",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
       "escalation-path": {
         "status": "covered",
         "viewpoints": {
@@ -689,6 +985,21 @@
         }
       },
       "logic-apps": {
+        "status": "covered",
+        "group_command": "resourcehijacking",
+        "viewpoints": {
+          "admin": {
+            "status": "covered"
+          },
+          "dev": {
+            "status": "covered"
+          },
+          "lower-privilege": {
+            "status": "covered"
+          }
+        }
+      },
+      "vm-extensions": {
         "status": "covered",
         "viewpoints": {
           "admin": {

@@ -39,8 +39,17 @@ func TestBuildAzureSetupTFVarsUsesOneVariableModel(t *testing.T) {
 	if payload["enable_azure_ml"] != false {
 		t.Fatalf("expected azure-ml lane to default false, got %#v", payload["enable_azure_ml"])
 	}
+	if payload["azure_ml_workspace_name"] != "" {
+		t.Fatalf("expected azure-ml workspace name to default empty when the lane is disabled, got %#v", payload["azure_ml_workspace_name"])
+	}
 	if payload["enable_deployment_path_addin"] != false {
 		t.Fatalf("expected deployment-path add-in to default false, got %#v", payload["enable_deployment_path_addin"])
+	}
+	if payload["enable_resource_hijacking_addin"] != false {
+		t.Fatalf("expected resource-hijacking add-in to default false, got %#v", payload["enable_resource_hijacking_addin"])
+	}
+	if payload["enable_exfil_addin"] != false {
+		t.Fatalf("expected exfil add-in to default false, got %#v", payload["enable_exfil_addin"])
 	}
 	if payload["enable_compute_control_addin"] != false {
 		t.Fatalf("expected compute-control add-in to default false, got %#v", payload["enable_compute_control_addin"])
@@ -96,6 +105,12 @@ func TestRunAzureSetupWritesTFVarsAndRunsTofuFlow(t *testing.T) {
 	}
 	if tfvars["enable_deployment_path_addin"] != false {
 		t.Fatalf("expected deployment-path add-in to stay disabled by default, got %#v", tfvars["enable_deployment_path_addin"])
+	}
+	if tfvars["enable_resource_hijacking_addin"] != false {
+		t.Fatalf("expected resource-hijacking add-in to stay disabled by default, got %#v", tfvars["enable_resource_hijacking_addin"])
+	}
+	if tfvars["enable_exfil_addin"] != false {
+		t.Fatalf("expected exfil add-in to stay disabled by default, got %#v", tfvars["enable_exfil_addin"])
 	}
 	if tfvars["enable_compute_control_addin"] != false {
 		t.Fatalf("expected compute-control add-in to stay disabled by default, got %#v", tfvars["enable_compute_control_addin"])
@@ -174,6 +189,22 @@ func TestRunAzureSetupAddsAzureMLAsFollowUpInfrastructure(t *testing.T) {
 	if !strings.Contains(progress.String(), "Running follow-up OpenTofu apply for Azure ML...") {
 		t.Fatalf("expected azure-ml follow-up progress, got %q", progress.String())
 	}
+	tfvars := map[string]any{}
+	if err := LoadJSON(outputPath, &tfvars); err != nil {
+		t.Fatalf("load generated tfvars: %v", err)
+	}
+	workspaceName, _ := tfvars["azure_ml_workspace_name"].(string)
+	if !strings.HasPrefix(workspaceName, "aml2-ops-") {
+		t.Fatalf("expected generated azure-ml workspace name, got %#v", tfvars["azure_ml_workspace_name"])
+	}
+	namePath := DefaultGeneratedAzureMLWorkspaceNamePath(infraDir)
+	storedName, err := os.ReadFile(namePath)
+	if err != nil {
+		t.Fatalf("expected stored azure-ml workspace name: %v", err)
+	}
+	if strings.TrimSpace(string(storedName)) != workspaceName {
+		t.Fatalf("expected stored workspace name %q to match tfvars %q", strings.TrimSpace(string(storedName)), workspaceName)
+	}
 }
 
 func TestRunAzureSetupAddsOptionalAddinsAsFollowUpInfrastructure(t *testing.T) {
@@ -191,17 +222,19 @@ func TestRunAzureSetupAddsOptionalAddinsAsFollowUpInfrastructure(t *testing.T) {
 
 	var progress bytes.Buffer
 	_, exitCode, err := RunAzureSetup(AzureSetupConfig{
-		InfraDir:                  infraDir,
-		Location:                  "centralus",
-		NamePrefix:                "hoazurelab",
-		SSHPublicKey:              "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCtest",
-		CostProfile:               "default",
-		AKSVMSize:                 "Standard_D2s_v3",
-		EnableDeploymentPathAddin: true,
-		EnableComputeControlAddin: true,
-		EnablePersistenceAddin:    true,
-		TofuBinary:                fakeTofuPath,
-		ProgressWriter:            &progress,
+		InfraDir:                     infraDir,
+		Location:                     "centralus",
+		NamePrefix:                   "hoazurelab",
+		SSHPublicKey:                 "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCtest",
+		CostProfile:                  "default",
+		AKSVMSize:                    "Standard_D2s_v3",
+		EnableDeploymentPathAddin:    true,
+		EnableResourceHijackingAddin: true,
+		EnableExfilAddin:             true,
+		EnableComputeControlAddin:    true,
+		EnablePersistenceAddin:       true,
+		TofuBinary:                   fakeTofuPath,
+		ProgressWriter:               &progress,
 	})
 	if err != nil {
 		t.Fatalf("run azure setup with add-ins: %v", err)
@@ -217,11 +250,21 @@ func TestRunAzureSetupAddsOptionalAddinsAsFollowUpInfrastructure(t *testing.T) {
 	logText := string(logData)
 	for _, expected := range []string{
 		"-exclude=azurerm_automation_runbook.deployment_path[0]",
+		"-exclude=azurerm_automation_runbook.resource_hijacking[0]",
+		"-exclude=azurerm_eventhub_namespace.exfil[0]",
+		"-exclude=azurerm_monitor_diagnostic_setting.exfil_public_app_loganalytics[0]",
 		"-exclude=azurerm_linux_web_app.compute_control[0]",
 		"-exclude=azurerm_logic_app_workflow.persistence[0]",
+		"-exclude=azurerm_api_connection.queue[0]",
+		"-exclude=azurerm_logic_app_workflow.no_identity[0]",
 		"-target=azurerm_automation_runbook.deployment_path[0]",
+		"-target=azurerm_automation_runbook.resource_hijacking[0]",
+		"-target=azurerm_eventhub_namespace.exfil[0]",
+		"-target=azurerm_monitor_diagnostic_setting.exfil_public_app_loganalytics[0]",
 		"-target=azurerm_linux_web_app.compute_control[0]",
 		"-target=azurerm_logic_app_workflow.persistence[0]",
+		"-target=azurerm_api_connection.queue[0]",
+		"-target=azurerm_logic_app_workflow.no_identity[0]",
 	} {
 		if !strings.Contains(logText, expected) {
 			t.Fatalf("expected add-in target %q in fake tofu log, got %q", expected, logText)
@@ -230,6 +273,8 @@ func TestRunAzureSetupAddsOptionalAddinsAsFollowUpInfrastructure(t *testing.T) {
 	progressText := progress.String()
 	for _, expected := range []string{
 		"Running follow-up OpenTofu apply for Deployment Path Add-in...",
+		"Running follow-up OpenTofu apply for Resource Hijacking Add-in...",
+		"Running follow-up OpenTofu apply for Exfil Add-in...",
 		"Running follow-up OpenTofu apply for Compute Control Add-in...",
 		"Running follow-up OpenTofu apply for Persistence Add-in...",
 	} {
@@ -270,8 +315,17 @@ func TestRunAzureSetupGeneratesLabKeyWhenNoKeyIsProvided(t *testing.T) {
 	if tfvars["enable_azure_ml"] != false {
 		t.Fatalf("expected generated tfvars to keep azure-ml lane disabled by default, got %#v", tfvars["enable_azure_ml"])
 	}
+	if tfvars["azure_ml_workspace_name"] != "" {
+		t.Fatalf("expected generated tfvars to keep azure-ml workspace name empty by default, got %#v", tfvars["azure_ml_workspace_name"])
+	}
 	if tfvars["enable_deployment_path_addin"] != false {
 		t.Fatalf("expected generated tfvars to keep deployment-path add-in disabled by default, got %#v", tfvars["enable_deployment_path_addin"])
+	}
+	if tfvars["enable_resource_hijacking_addin"] != false {
+		t.Fatalf("expected generated tfvars to keep resource-hijacking add-in disabled by default, got %#v", tfvars["enable_resource_hijacking_addin"])
+	}
+	if tfvars["enable_exfil_addin"] != false {
+		t.Fatalf("expected generated tfvars to keep exfil add-in disabled by default, got %#v", tfvars["enable_exfil_addin"])
 	}
 	if tfvars["enable_compute_control_addin"] != false {
 		t.Fatalf("expected generated tfvars to keep compute-control add-in disabled by default, got %#v", tfvars["enable_compute_control_addin"])
@@ -671,6 +725,138 @@ func TestRunAzureSetupSplitsCoreAndFollowUpInfrastructure(t *testing.T) {
 		if !strings.Contains(logText, target) {
 			t.Fatalf("expected follow-up apply target %q, got %q", target, logText)
 		}
+	}
+}
+
+func TestRunAzureSetupSkipsDefaultFollowUpsForLowerCostUnlessEnabled(t *testing.T) {
+	infraDir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "tool.log")
+	fakeToolPath := filepath.Join(t.TempDir(), "fake-tool")
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		fmt.Sprintf("echo \"$@\" >> %s", shellQuote(logPath)),
+		"if [ \"$1\" = \"init\" ] || [ \"$1\" = \"apply\" ]; then",
+		"  exit 0",
+		"fi",
+		"if [ \"$1\" = \"output\" ]; then",
+		"cat <<'EOF'",
+		`{"subscription_id":{"value":"sub-123"},"resource_group_names":{"value":{"data":"rg-data","workload":"rg-workload"}}}`,
+		"EOF",
+		"  exit 0",
+		"fi",
+		"exit 0",
+	}, "\n")
+	if err := os.WriteFile(fakeToolPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tool: %v", err)
+	}
+
+	_, exitCode, err := RunAzureSetup(AzureSetupConfig{
+		InfraDir:     infraDir,
+		Location:     "centralus",
+		NamePrefix:   "hoazurelab",
+		SSHPublicKey: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCtest",
+		CostProfile:  "lower-cost",
+		AKSVMSize:    "Standard_D2s_v3",
+		TofuBinary:   fakeToolPath,
+	})
+	if err != nil {
+		t.Fatalf("expected successful lower-cost setup, got %v", err)
+	}
+	if exitCode != 0 {
+		t.Fatalf("expected successful exit code, got %d", exitCode)
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read tool log: %v", err)
+	}
+	logText := string(logData)
+	for _, target := range []string{
+		"-exclude=azurerm_api_management.main",
+		"-exclude=azurerm_kubernetes_cluster.main",
+		"-exclude=azurerm_application_gateway.edge",
+	} {
+		if !strings.Contains(logText, target) {
+			t.Fatalf("expected lower-cost core apply to exclude default follow-up target %q, got %q", target, logText)
+		}
+	}
+	for _, target := range []string{
+		"-target=azurerm_api_management.main",
+		"-target=azurerm_kubernetes_cluster.main",
+		"-target=azurerm_application_gateway.edge",
+	} {
+		if strings.Contains(logText, target) {
+			t.Fatalf("did not expect lower-cost setup to run default follow-up target %q, got %q", target, logText)
+		}
+	}
+
+	if err := os.WriteFile(logPath, nil, 0o644); err != nil {
+		t.Fatalf("clear tool log: %v", err)
+	}
+	_, exitCode, err = RunAzureSetup(AzureSetupConfig{
+		InfraDir:               infraDir,
+		Location:               "centralus",
+		NamePrefix:             "hoazurelab",
+		SSHPublicKey:           "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCtest",
+		CostProfile:            "lower-cost",
+		AKSVMSize:              "Standard_D2s_v3",
+		EnableDefaultFollowUps: true,
+		TofuBinary:             fakeToolPath,
+	})
+	if err != nil {
+		t.Fatalf("expected successful lower-cost setup with default follow-ups, got %v", err)
+	}
+	if exitCode != 0 {
+		t.Fatalf("expected successful exit code with default follow-ups, got %d", exitCode)
+	}
+	logData, err = os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read tool log after default follow-ups: %v", err)
+	}
+	logText = string(logData)
+	for _, target := range []string{
+		"-target=azurerm_api_management.main",
+		"-target=azurerm_kubernetes_cluster.main",
+		"-target=azurerm_application_gateway.edge",
+	} {
+		if !strings.Contains(logText, target) {
+			t.Fatalf("expected lower-cost setup with default follow-ups to run target %q, got %q", target, logText)
+		}
+	}
+}
+
+func TestTofuProgressWriterAddsRolloutNumbers(t *testing.T) {
+	var progress bytes.Buffer
+	writer := newTofuProgressWriter(&progress)
+	lines := strings.Join([]string{
+		"Plan: 2 to add, 0 to change, 0 to destroy.",
+		"azurerm_resource_group.workload: Creating...",
+		"azurerm_resource_group.workload: Still creating... [10s elapsed]",
+		"azurerm_resource_group.workload: Creation complete after 11s [id=/subscriptions/sub/resourceGroups/rg]",
+		"azurerm_linux_web_app.public: Creating...",
+		"azurerm_linux_web_app.public: Creation complete after 8s [id=/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/app]",
+	}, "\n")
+	if _, err := writer.Write([]byte(lines)); err != nil {
+		t.Fatalf("write progress: %v", err)
+	}
+	if err := writer.Flush(); err != nil {
+		t.Fatalf("flush progress: %v", err)
+	}
+
+	progressText := progress.String()
+	for _, expected := range []string{
+		"OpenTofu rollout plan: 2 resource(s) to create.",
+		"OpenTofu rollout start 1/2: azurerm_resource_group.workload",
+		"OpenTofu rollout complete 1/2: azurerm_resource_group.workload",
+		"OpenTofu rollout start 2/2: azurerm_linux_web_app.public",
+		"OpenTofu rollout complete 2/2: azurerm_linux_web_app.public",
+	} {
+		if !strings.Contains(progressText, expected) {
+			t.Fatalf("expected progress line %q, got %q", expected, progressText)
+		}
+	}
+	if strings.Contains(progressText, "Still creating 2/2") {
+		t.Fatalf("did not expect still-creating lines to increment rollout progress, got %q", progressText)
 	}
 }
 
